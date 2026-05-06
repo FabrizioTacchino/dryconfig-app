@@ -1,0 +1,1 @@
+UPDATE configurator_settings SET value = '30.00' WHERE key = 'cost_per_hour'
