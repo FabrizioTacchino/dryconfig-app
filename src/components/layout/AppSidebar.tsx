@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FolderOpen, Wrench, Package, Shield, Users, Upload, Truck } from 'lucide-react';
+import { LayoutDashboard, FolderOpen, Wrench, Package, Shield, Users, Upload, Truck, Sparkles } from 'lucide-react';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useCurrentOrganization } from '@/contexts/OrganizationContext';
@@ -16,6 +16,9 @@ const AppSidebar = () => {
   const { currentRole } = useCurrentOrganization();
   const canManageTeam = currentRole === 'owner' || currentRole === 'admin';
   const canImportMaterials = ['owner', 'admin', 'technician'].includes(currentRole ?? '');
+  // V2 beta: visibile solo in dev (import.meta.env.DEV) o per owner.
+  // Quando V2 sarà pronta swappiamo /configurator → ConfiguratorV2 e rimuoviamo questa voce.
+  const showConfiguratorV2 = import.meta.env.DEV || currentRole === 'owner';
 
   const navigation = [{
     name: 'Dashboard',
@@ -29,7 +32,11 @@ const AppSidebar = () => {
     name: 'Configuratore',
     href: '/configurator',
     icon: Wrench
-  }, {
+  }, ...(showConfiguratorV2 ? [{
+    name: 'Configuratore V2 ✨',
+    href: '/configurator-v2',
+    icon: Sparkles
+  }] : []), {
     name: 'Materiali',
     href: '/materials',
     icon: Package

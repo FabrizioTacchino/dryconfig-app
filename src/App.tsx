@@ -13,6 +13,7 @@ import Dashboard from "./pages/Dashboard";
 import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
 import Configurator from "./pages/Configurator";
+import ConfiguratorV2 from "./pages/ConfiguratorV2";
 import Materials from "./pages/Materials";
 import Admin from "./pages/Admin";
 import EstimateManagement from "./pages/EstimateManagement";
@@ -67,6 +68,11 @@ const App = () => {
                 <Route path="/configurator" element={
                   <ProtectedRoute>
                     <Configurator />
+                  </ProtectedRoute>
+                } />
+                <Route path="/configurator-v2" element={
+                  <ProtectedRoute>
+                    <ConfiguratorV2 />
                   </ProtectedRoute>
                 } />
                 <Route path="/materials" element={
