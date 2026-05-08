@@ -1,10 +1,11 @@
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { MaterialFormData } from './MaterialFormData';
-import { applyCumulativeDiscounts, validateDiscountString } from '@/utils/discountUtils';
 
 interface MaterialPricingSectionProps {
   formData: MaterialFormData;
@@ -13,34 +14,31 @@ interface MaterialPricingSectionProps {
 }
 
 const MaterialPricingSection = ({ formData, setFormData, isSubmitting }: MaterialPricingSectionProps) => {
-  // Calcola automaticamente il prezzo finale quando cambiano prezzo di listino, sconto, sfrido e discarica
+  // Catena famiglia (read-only, viene dalla view materials_with_pricing al load)
+  const familyChainStr = (formData as any).family_discount_chain_display ?? ''; // es. "50 + 54.5"
+  const familyPctStr   = (formData as any).family_discount_pct_display ?? '0';
+  const familyPct      = parseFloat(familyPctStr) || 0;
+  const familyFactor   = 1 - familyPct / 100;
+
+  // Sconto extra prodotto editabile
+  const extraPct = useMemo(() => {
+    const v = parseFloat(formData.extra_discount || '0');
+    return Number.isFinite(v) && v >= 0 && v < 100 ? v : 0;
+  }, [formData.extra_discount]);
+
+  // Calcolo unit_price (netto) live a partire da list_price, catena famiglia e extra_discount
+  // Sfrido/discarica non si applicano qui — sono fattori di consumo per m², non di prezzo unitario.
   useEffect(() => {
     const listPrice = parseFloat(formData.list_price || '0');
-    const discount = formData.discount?.trim();
-    const wastePercentage = parseFloat(formData.waste_percentage || '0');
-    const disposalPercentage = parseFloat(formData.disposal_percentage || '0');
-    
     if (listPrice > 0) {
-      let finalPrice = listPrice;
-      
-      // Applica gli sconti se presenti
-      if (discount && validateDiscountString(discount)) {
-        finalPrice = applyCumulativeDiscounts(listPrice, discount);
-      }
-      
-      // Aggiungi sfrido e discarica
-      const wasteAmount = (finalPrice * wastePercentage) / 100;
-      const disposalAmount = (finalPrice * disposalPercentage) / 100;
-      finalPrice = finalPrice + wasteAmount + disposalAmount;
-      
-      // Per le viti, usa 4 decimali, per altri materiali 2 decimali
+      const finalPrice = listPrice * familyFactor * (1 - extraPct / 100);
       const decimals = formData.category === 'screw' ? 4 : 2;
-      setFormData(prev => ({ 
-        ...prev, 
-        unit_price: finalPrice.toFixed(decimals)
-      }));
+      setFormData(prev => ({ ...prev, unit_price: finalPrice.toFixed(decimals) }));
     }
-  }, [formData.list_price, formData.discount, formData.waste_percentage, formData.disposal_percentage, formData.category, setFormData]);
+  }, [formData.list_price, familyFactor, extraPct, formData.category, setFormData]);
+
+  const totalPct = (1 - familyFactor * (1 - extraPct / 100)) * 100;
+  const hasFamily = familyPct > 0.001;
 
   // Determina il numero di decimali da mostrare
   const getStepValue = () => {
@@ -72,23 +70,46 @@ const MaterialPricingSection = ({ formData, setFormData, isSubmitting }: Materia
           />
         </div>
 
-        <div>
-          <Label htmlFor="discount">Sconto (cumulativo)</Label>
+        <div className="col-span-2 rounded-md border border-blue-200 bg-blue-50/40 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-sm font-medium text-blue-900">Sconto famiglia (catena cumulativa)</Label>
+            <Link to="/settings/suppliers" className="text-xs text-blue-700 hover:underline">
+              Modifica in /settings/suppliers →
+            </Link>
+          </div>
+          {hasFamily ? (
+            <div className="flex items-center flex-wrap gap-2 text-sm">
+              <Badge variant="outline" className="bg-white border-blue-200 font-mono">
+                {familyChainStr || `${familyPct.toFixed(2)}%`}
+              </Badge>
+              <span className="text-blue-900">→ paghi <strong>{(100 - familyPct).toFixed(2)}%</strong> del listino</span>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">Nessuno sconto famiglia attivo per la tua organizzazione.</div>
+          )}
+        </div>
+
+        <div className="col-span-2">
+          <Label htmlFor="extra_discount">Sconto extra prodotto (%)</Label>
           <Input
-            id="discount"
-            type="text"
-            value={formData.discount}
-            onChange={(e) => setFormData(prev => ({ ...prev, discount: e.target.value }))}
+            id="extra_discount"
+            type="number"
+            min="0"
+            max="99.99"
+            step="0.01"
+            value={formData.extra_discount}
+            onChange={(e) => setFormData(prev => ({ ...prev, extra_discount: e.target.value }))}
             disabled={isSubmitting}
-            placeholder="50+25+5"
-            className={formData.discount && !validateDiscountString(formData.discount) ? 'border-red-500' : ''}
+            placeholder="0"
+            className="max-w-xs"
           />
-          <p className="text-sm text-muted-foreground mt-1">
-            Inserisci gli sconti separati da +. Esempio: 50+25+5 per sconti del 50%, poi 25%, poi 5%
+          <p className="text-xs text-muted-foreground mt-1">
+            Eventuale sconto aggiuntivo per <em>questo prodotto</em>, applicato dopo la catena famiglia.
+            Lascia <code>0</code> se vale solo lo sconto famiglia.
           </p>
-          {formData.discount && !validateDiscountString(formData.discount) && (
-            <p className="text-sm text-red-500 mt-1">
-              Formato sconto non valido
+          {extraPct > 0 && (
+            <p className="text-xs text-blue-700 mt-1">
+              Sconto totale combinato: <strong>{totalPct.toFixed(2)}%</strong> · paghi {(100 - totalPct).toFixed(2)}% del listino
             </p>
           )}
         </div>

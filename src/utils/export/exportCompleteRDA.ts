@@ -3,16 +3,17 @@ import autoTable from 'jspdf-autotable';
 import { Estimate } from '@/types';
 import { EstimateStratigraphy } from '@/types/estimateStratigraphy';
 import { supabase } from '@/integrations/supabase/client';
-import { 
-  calculateActualThickness, 
-  identifyStructuralGroups, 
-  isGuide, 
-  isAccessory, 
+import {
+  calculateActualThickness,
+  identifyStructuralGroups,
+  isGuide,
+  isAccessory,
   getLayerActualThickness,
   isStructure,
   isInsulation,
   isBoard
 } from '@/components/configurator/utils/stratigraphyUtils';
+import { getScrewPricePerPiece } from '@/utils/screwPricing';
 
 interface StratigraphyMaterial {
   materialName: string;
@@ -579,7 +580,8 @@ const extractDetailedMaterials = (layers: any[]): StratigraphyMaterial[] => {
           supplier: layer.screwMaterial.supplier || 'Non specificato',
           thickness: 0,
           quantity: layer.screwQuantity,
-          unitPrice: layer.screwMaterial.unit_price || 0,
+          // Prezzo unitario = prezzo PER PEZZO (non per scatola): unit_price / box_pieces
+          unitPrice: getScrewPricePerPiece(layer.screwMaterial),
           totalCost: layer.screwCostPerSqm || 0,
           unit: 'pz/m²',
           specifications: `Quantità: ${layer.screwQuantity} pezzi per m²`,

@@ -8,6 +8,7 @@ import LayerItem from './LayerItem';
 import IntegratedBoardLayerItem from './IntegratedBoardLayerItem';
 import { useAutoSuggestStructure } from '../hooks/useAutoSuggestStructure';
 import StructureSuggestionDialog from './StructureSuggestionDialog';
+import { computeScrewCostPerSqm } from '@/utils/screwPricing';
 
 interface NestedLayerCompositionProps {
   layers: Layer[];
@@ -210,7 +211,8 @@ const NestedLayerComposition = ({
 
     const updatedLayers = layers.map(layer => {
       if (layer.id === layerId) {
-        const screwCostPerSqm = (screwMaterial.unit_price || 0) * quantity;
+        // Vite vendute a scatola: dividere unit_price per box_pieces e moltiplicare per qty/m²
+        const screwCostPerSqm = computeScrewCostPerSqm(screwMaterial, quantity);
         return {
           ...layer,
           screwMaterialId: screwMaterial.id,

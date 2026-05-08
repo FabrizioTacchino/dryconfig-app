@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { MaterialCategory } from '@/types';
+import { useCurrentOrganization } from '@/contexts/OrganizationContext';
 
 export type { MaterialCategory };
 
@@ -71,81 +72,73 @@ export interface DatabaseMaterial {
   waste_percentage: number | null;
   /** Percentuale discarica */
   disposal_percentage: number | null;
+  /** Sconto extra del singolo prodotto (%), applicato dopo la catena famiglia */
+  extra_discount: number | null;
+  // ---- Pricing dalla view materials_with_pricing (sola lettura) ----
+  /** Catena cumulativa di sconti famiglia (es. [50, 54.5]) */
+  family_discount_chain?: number[] | null;
+  /** % netta della sola catena famiglia (es. 77.10 = paghi 22.90%) */
+  family_discount_pct?: number | null;
+  /** % extra del prodotto (uguale a extra_discount) */
+  extra_discount_pct?: number | null;
+  /** % totale combinata famiglia + extra */
+  total_discount_pct?: number | null;
+  /** Prezzo netto live (list × catena famiglia × (1 - extra/100)) */
+  net_price?: number | null;
+  /** True se la famiglia ha uno sconto attivo per questa org */
+  has_family_discount?: boolean;
+  /** True se il prodotto ha uno sconto extra > 0 */
+  has_extra_discount?: boolean;
 }
 
 export const useMaterials = () => {
+  const { currentOrganizationId } = useCurrentOrganization();
+
   return useQuery({
-    queryKey: ['materials'],
+    queryKey: ['materials', currentOrganizationId ?? 'global-only'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('materials')
-        .select(`
-          *,
-          list_price,
-          sheet_thickness,
-          weight_per_ml,
-          profile_type,
-          surface_finish,
-          passo,
-          discount,
-          is_variable_thickness,
-          mechanical_performance,
-          thermal_performance_notes,
-          sustainability_notes,
-          system_compatibility,
-          fire_performance_notes,
-          carbon_footprint,
-          epd,
-          vapor_permeability,
-          thermal_capacity,
-          waste_percentage,
-          disposal_percentage
-        `)
+      // Visibile: catalogo globale (organization_id IS NULL) + materiali della org corrente
+      let query = supabase
+        .from('materials_with_pricing' as never)
+        .select('*')
+        .eq('is_active', true)
         .order('category', { ascending: true })
         .order('name', { ascending: true });
 
-      if (error) {
-        throw new Error(`Error fetching materials: ${error.message}`);
+      if (currentOrganizationId) {
+        query = query.or(`organization_id.is.null,organization_id.eq.${currentOrganizationId}`);
+      } else {
+        query = query.is('organization_id', null);
       }
+
+      const { data, error } = await query;
+      if (error) throw new Error(`Error fetching materials: ${error.message}`);
       return data as DatabaseMaterial[];
     },
   });
 };
 
 export const useMaterialsByCategory = (category: MaterialCategory) => {
+  const { currentOrganizationId } = useCurrentOrganization();
+
   return useQuery({
-    queryKey: ['materials', category],
+    queryKey: ['materials', category, currentOrganizationId ?? 'global-only'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('materials')
-        .select(`
-          *,
-          list_price,
-          sheet_thickness,
-          weight_per_ml,
-          profile_type,
-          surface_finish,
-          passo,
-          discount,
-          is_variable_thickness,
-          mechanical_performance,
-          thermal_performance_notes,
-          sustainability_notes,
-          system_compatibility,
-          fire_performance_notes,
-          carbon_footprint,
-          epd,
-          vapor_permeability,
-          thermal_capacity,
-          waste_percentage,
-          disposal_percentage
-        `)
-        .eq('category', category as any) // <- Fix: cast to any
+      let query = supabase
+        .from('materials_with_pricing' as never)
+        .select('*')
+        .eq('is_active', true)
+        .eq('category', category as any)
         .order('name', { ascending: true });
 
-      if (error) {
-        throw new Error(`Error fetching materials for category ${category}: ${error.message}`);
+      if (currentOrganizationId) {
+        query = query.or(`organization_id.is.null,organization_id.eq.${currentOrganizationId}`);
+      } else {
+        query = query.is('organization_id', null);
       }
+
+      const { data, error } = await query;
+      if (error) throw new Error(`Error fetching materials for category ${category}: ${error.message}`);
       return data as DatabaseMaterial[];
     },
   });

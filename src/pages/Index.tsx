@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Building, Calculator, FileText, Shield } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { Logo } from '@/components/brand/Logo';
 
 const Index = () => {
   const navigate = useNavigate();
@@ -27,9 +28,9 @@ const Index = () => {
   return <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-16">
-          <h1 className="text-4xl font-bold tracking-tight mb-6">
-            DryConfig
-          </h1>
+          <div className="flex justify-center mb-6">
+            <Logo size={64} />
+          </div>
           <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto px-0">
             Sistema professionale per la configurazione e preventivazione<br />
             di pareti a secco, contropareti e controsoffitti

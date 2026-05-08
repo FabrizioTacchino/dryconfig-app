@@ -17,10 +17,10 @@ import { useDeleteMaterial } from '@/hooks/useMaterialActions';
 import { useMaterialDuplicate } from '@/hooks/useMaterialDuplicate';
 import EditMaterialDialog from './EditMaterialDialog';
 import CreateMaterialDialog from './CreateMaterialDialog';
+import { getScrewPricePerPiece } from '@/utils/screwPricing';
 import { MaterialSortField, SortDirection } from '@/hooks/useMaterialsSorting';
 import MaterialDetailsCell from "./MaterialDetailsCell";
 import MaterialDimensionsCell from "./MaterialDimensionsCell";
-import { calculateFinalPrice } from '@/utils/discountUtils';
 
 interface MaterialsTableProps {
   materials: DatabaseMaterial[];
@@ -65,8 +65,10 @@ const MaterialsTable: React.FC<MaterialsTableProps> = ({
 
   const calculateCostPerSqm = (material: DatabaseMaterial) => {
     const incidence = material.incidence_per_sqm || 1;
-    // Calcola il prezzo finale usando la nuova logica di sconti cumulativi
-    const finalPrice = calculateFinalPrice(material.unit_price, material.list_price, material.discount);
+    // net_price arriva dalla view materials_with_pricing (calcolato live: list × catena famiglia × extra)
+    // Fallback a unit_price per materiali pre-view, fallback ulteriore a list_price.
+    const finalPrice =
+      (material.net_price ?? material.unit_price ?? material.list_price ?? 0);
     return (finalPrice * incidence).toFixed(2);
   };
 
@@ -334,14 +336,52 @@ const MaterialsTable: React.FC<MaterialsTableProps> = ({
                   <MaterialDimensionsCell material={material} />
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline" className="bg-green-50 text-green-700">
-                    €{material.unit_price.toFixed(2)}/{material.unit}
-                  </Badge>
+                  {(() => {
+                    const netPrice = material.net_price ?? material.unit_price ?? 0;
+                    const listPrice = material.list_price ?? netPrice;
+                    const isDiscounted = listPrice > netPrice + 0.001;
+                    const isScrewBox = material.category === 'screw' && material.unit === 'scatola' && (material.box_pieces ?? 0) > 0;
+                    const pricePerPiece = isScrewBox ? getScrewPricePerPiece(material) : null;
+                    return (
+                      <div className="flex flex-col items-start gap-0.5">
+                        <Badge variant="outline" className="bg-green-50 text-green-700 font-medium">
+                          €{netPrice.toFixed(2)}/{material.unit}
+                        </Badge>
+                        {isScrewBox && pricePerPiece != null && (
+                          <span className="text-[10px] text-blue-700 font-mono">
+                            €{pricePerPiece.toFixed(4)}/pz · {material.box_pieces} pz/scatola
+                          </span>
+                        )}
+                        {isDiscounted && (
+                          <span className="text-[10px] text-muted-foreground">
+                            Listino <span className="line-through">€{listPrice.toFixed(2)}</span>
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline" className="bg-yellow-50 text-yellow-800">
-                    {material.discount || '0'}%
-                  </Badge>
+                  {(() => {
+                    const totalPct = material.total_discount_pct ?? null;
+                    const familyPct = material.family_discount_pct ?? 0;
+                    const extraPct  = material.extra_discount_pct  ?? 0;
+                    if (totalPct == null || totalPct < 0.01) {
+                      return <Badge variant="outline" className="bg-gray-50 text-gray-500">—</Badge>;
+                    }
+                    return (
+                      <div className="flex flex-col items-start gap-0.5">
+                        <Badge variant="outline" className="bg-yellow-50 text-yellow-800 font-medium">
+                          {totalPct.toFixed(2)}%
+                        </Badge>
+                        {extraPct > 0 && (
+                          <span className="text-[10px] text-muted-foreground">
+                            Famiglia {familyPct.toFixed(1)}% + extra {extraPct.toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline" className="bg-blue-50 text-blue-700">

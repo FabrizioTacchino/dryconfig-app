@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { MaterialFormData } from '../forms/MaterialFormData';
-import { applyCumulativeDiscounts } from '@/utils/discountUtils';
 
 export const useMaterialSubmit = (onOpenChange: (open: boolean) => void, onSuccess: () => void) => {
   const queryClient = useQueryClient();
@@ -12,48 +11,10 @@ export const useMaterialSubmit = (onOpenChange: (open: boolean) => void, onSucce
     mutationFn: async (formData: MaterialFormData & { id?: string }) => {
       console.log('[useMaterialSubmit] 🚀 SUBMITTING MATERIAL:', formData);
 
-      // Calcola il prezzo finale se sono presenti prezzo di listino e sconto
-      let finalUnitPrice = parseFloat(formData.unit_price || '0');
-      
-      if (formData.list_price && formData.discount) {
-        const listPrice = parseFloat(formData.list_price);
-        if (!isNaN(listPrice)) {
-          // Prima applica gli sconti
-          let discountedPrice = applyCumulativeDiscounts(listPrice, formData.discount);
-          
-          // Poi aggiungi sfrido e discarica
-          const wastePercentage = parseFloat(formData.waste_percentage || '0');
-          const disposalPercentage = parseFloat(formData.disposal_percentage || '0');
-          
-          const wasteAmount = (discountedPrice * wastePercentage) / 100;
-          const disposalAmount = (discountedPrice * disposalPercentage) / 100;
-          
-          finalUnitPrice = discountedPrice + wasteAmount + disposalAmount;
-          
-          console.log('[useMaterialSubmit] 💰 CALCULATED FINAL PRICE WITH WASTE/DISPOSAL:', {
-            listPrice,
-            discount: formData.discount,
-            discountedPrice: discountedPrice.toFixed(4),
-            wastePercentage,
-            wasteAmount: wasteAmount.toFixed(4),
-            disposalPercentage,
-            disposalAmount: disposalAmount.toFixed(4),
-            finalUnitPrice: finalUnitPrice.toFixed(4)
-          });
-        }
-      } else if (formData.list_price && !formData.discount) {
-        // Se c'è solo il prezzo di listino senza sconto, usalo come base e aggiungi sfrido/discarica
-        const listPrice = parseFloat(formData.list_price);
-        if (!isNaN(listPrice)) {
-          const wastePercentage = parseFloat(formData.waste_percentage || '0');
-          const disposalPercentage = parseFloat(formData.disposal_percentage || '0');
-          
-          const wasteAmount = (listPrice * wastePercentage) / 100;
-          const disposalAmount = (listPrice * disposalPercentage) / 100;
-          
-          finalUnitPrice = listPrice + wasteAmount + disposalAmount;
-        }
-      }
+      // unit_price viene RICALCOLATO dal trigger DB sulla base di list_price,
+      // catena famiglia (customer_discounts) e materials.extra_discount.
+      // Qui salviamo solo i valori sorgente; il netto viene fuori dalla view materials_with_pricing.
+      const finalUnitPrice = parseFloat(formData.unit_price || '0');
 
       // Prepara i dati per l'inserimento/aggiornamento
       const materialData = {
@@ -66,9 +27,11 @@ export const useMaterialSubmit = (onOpenChange: (open: boolean) => void, onSucce
         width: formData.width ? parseFloat(formData.width) : null,
         length: formData.length ? parseFloat(formData.length) : null,
         weight_per_sqm: formData.weight_per_sqm ? parseFloat(formData.weight_per_sqm) : null,
-        unit_price: finalUnitPrice, // Mantieni la precisione originale
+        unit_price: finalUnitPrice, // sarà sovrascritto dal trigger DB se cambia extra_discount
         list_price: formData.list_price ? parseFloat(formData.list_price) : null,
-        discount: formData.discount || null,
+        // discount (TEXT legacy) NON più gestito dal frontend — lasciato a NULL al posto del valore
+        discount: null,
+        extra_discount: formData.extra_discount ? parseFloat(formData.extra_discount) : 0,
         unit: formData.unit,
         thermal_conductivity: formData.thermal_conductivity ? parseFloat(formData.thermal_conductivity) : null,
         acoustic_performance: formData.acoustic_performance ? parseFloat(formData.acoustic_performance) : null,

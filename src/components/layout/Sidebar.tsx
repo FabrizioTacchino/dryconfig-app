@@ -2,6 +2,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { Logo } from '@/components/brand/Logo';
 import { 
   LayoutDashboard, 
   FolderOpen, 
@@ -46,13 +47,8 @@ const Sidebar = () => {
   return (
     <div className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-60 lg:flex-col">
       <div className="flex grow flex-col gap-y-4 overflow-y-auto border-r border-gray-200 bg-white px-4 pb-4">
-        <div className="flex h-14 shrink-0 items-center justify-center gap-2 py-3">
-          <img 
-            src="/lovable-uploads/af9a8f4f-c139-4c9c-8347-b9a09c5f7d00.png" 
-            alt="DryConfig" 
-            className="h-8 w-8"
-          />
-          <h2 className="text-lg font-bold text-construction-primary">DryConfig</h2>
+        <div className="flex h-14 shrink-0 items-center justify-center py-3">
+          <Logo size={28} />
         </div>
         <nav className="flex flex-1 flex-col">
           <ul role="list" className="flex flex-1 flex-col gap-y-5">

@@ -26,18 +26,20 @@ import { useMaterialsSorting } from '@/hooks/useMaterialsSorting';
 const materialCategoryOptions: { value: MaterialCategory | 'all'; label: string }[] = [
   { value: 'all', label: 'Tutte le categorie' },
   { value: 'board', label: 'Lastre' },
+  { value: 'ceiling_tile', label: 'Pannelli controsoffitto' },
   { value: 'structure_frame', label: 'Struttura - Montanti' },
   { value: 'structure_guide', label: 'Struttura - Guide' },
   { value: 'insulation', label: 'Isolanti' },
   { value: 'accessory', label: 'Accessori' },
   { value: 'screw', label: 'Viti' },
+  { value: 'finish', label: 'Finiture (intonaci/rasanti)' },
   { value: 'other', label: 'Altro' }
 ];
 
-// allowed categories for import now including 'screw':
+// allowed categories for import:
 const allowedCategories = [
-  'board', 'structure_frame', 'structure_guide',
-  'insulation', 'accessory', 'screw', 'other'
+  'board', 'ceiling_tile', 'structure_frame', 'structure_guide',
+  'insulation', 'accessory', 'screw', 'finish', 'other'
 ] as const;
 
 // helper filtraggio materiali (estraibile volendo)
@@ -57,6 +59,13 @@ const filterMaterials = (
     return matchesSearch && matchesCategory;
   });
 };
+
+const Stat: React.FC<{ label: string; value: React.ReactNode; accent?: string }> = ({ label, value, accent = '' }) => (
+  <div>
+    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
+    <div className={`text-xl font-bold ${accent}`}>{value}</div>
+  </div>
+);
 
 const Materials = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -263,6 +272,29 @@ const Materials = () => {
                 )}
               </CardContent>
             </Card>
+
+            {/* Riepilogo risparmio (solo se ci sono materiali con sconto) */}
+            {(() => {
+              const withDiscount = filteredMaterials.filter(m =>
+                m.list_price != null && m.list_price > (m.unit_price ?? 0) + 0.001
+              );
+              if (withDiscount.length === 0) return null;
+              const totalList = withDiscount.reduce((s, m) => s + (m.list_price ?? 0), 0);
+              const totalNet  = withDiscount.reduce((s, m) => s + (m.unit_price ?? 0), 0);
+              const savePct = totalList > 0 ? ((1 - totalNet / totalList) * 100) : 0;
+              return (
+                <Card className="mb-6 bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
+                  <CardContent className="pt-6">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <Stat label="Materiali con sconto" value={`${withDiscount.length} / ${filteredMaterials.length}`} />
+                      <Stat label="Totale listino" value={`€ ${totalList.toFixed(2)}`} />
+                      <Stat label="Totale netto" value={`€ ${totalNet.toFixed(2)}`} accent="text-green-700" />
+                      <Stat label="Risparmio medio" value={`${savePct.toFixed(1)}%`} accent="text-green-700" />
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
             {/* Tabella materiali */}
             <Card>

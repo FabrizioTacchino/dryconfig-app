@@ -13,7 +13,17 @@ export interface MaterialFormData {
   weight_per_sqm: string;
   unit_price: string;
   unit: string;
-  discount: string; // AGGIUNTO QUI
+  /** @deprecated — usare extra_discount + customer_discounts. Mantenuto per compat lettura. */
+  discount: string;
+  /** Sconto aggiuntivo del prodotto (%), oltre alla catena famiglia */
+  extra_discount: string;
+  // ---- Read-only display fields (popolati dalla view materials_with_pricing) ----
+  /** Catena cumulativa famiglia, es. "50 + 54.5" */
+  family_discount_chain_display?: string;
+  /** % netta della sola catena famiglia */
+  family_discount_pct_display?: string;
+  /** % totale (famiglia + extra) */
+  total_discount_pct_display?: string;
   thermal_conductivity: string;
   acoustic_performance: string;
   fire_resistance_class: string;
@@ -75,7 +85,8 @@ export const initialFormData: MaterialFormData = {
   weight_per_sqm: '',
   unit_price: '',
   unit: 'mq',
-  discount: '', // AGGIUNTO QUI
+  discount: '', // DEPRECATED
+  extra_discount: '0',
   thermal_conductivity: '',
   acoustic_performance: '',
   fire_resistance_class: '',

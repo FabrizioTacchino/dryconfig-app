@@ -45,10 +45,21 @@ Pagamento: **Stripe** o **Lemon Squeezy** (decisione in Fase 1, dopo apertura P.
 - [ ] Merge branch dev → prod
 
 ### Fase 1 — Multi-tenancy & Monetizzazione (3-4 settimane)
-- [ ] Schema DB: `organizations` + `organization_members` + colonna `organization_id` ovunque
-- [ ] Migrazione dati: ogni utente esistente → propria organization personale
-- [ ] Riscrittura RLS basata su `is_member_of_org()`
-- [ ] Ruoli aziendali: owner/admin/manager/technician/viewer
+- [x] Schema DB: `organizations` + `organization_members` + colonna `organization_id` ovunque
+- [x] Migrazione dati: org "Impresa Percassi" creata, 4 utenti migrati con i loro dati
+- [x] Helper functions PostgreSQL (is_member_of, has_org_role, default_org_id)
+- [x] Trigger fill_organization_id (backward compat)
+- [x] OrganizationContext + useCurrentOrganization hook lato frontend
+- [x] OrgBadge nell'header (mostra org corrente + ruolo)
+- [x] Hook useProjects/useEstimates/useMaterials filtrano per organization_id corrente
+- [x] Riscrittura RLS business basata su `is_member_of(organization_id)` invece di `user_id`
+- [ ] Org switcher dropdown (per chi appartiene a multiple org)
+- [x] Ruoli aziendali: owner/admin/manager/technician/viewer (definiti come ENUM)
+- [x] Signup crea organization + membership owner automaticamente (trial 7gg)
+- [x] Pannello membri (gestione, cambio ruolo, rimozione)
+- [x] Sistema inviti con token + link copy-paste (admin manda manualmente per ora)
+- [ ] Email automatica per inviti (rimandato a Fase 2 — richiede setup provider Resend/SendGrid)
+- [x] Pagina accept invito (signup-then-join o join-existing)
 - [ ] Apertura P.IVA (lato Fabrizio)
 - [ ] Decisione Stripe vs Lemon Squeezy (vedi DECISIONS.md)
 - [ ] Tabelle: `subscriptions`, `plans`, `usage_quotas`
@@ -58,9 +69,23 @@ Pagamento: **Stripe** o **Lemon Squeezy** (decisione in Fase 1, dopo apertura P.
 - [ ] Free trial 7 giorni nativo
 
 ### Fase 2 — Funzionalità differenzianti (4-6 settimane)
-- [ ] Tabella `suppliers` separata
+- [x] Tabella `suppliers` (global + per-org) + FK su materials, RLS, backfill (Saint Gobain, Knauf, Fassa Bortolo, DryCore)
+- [x] UI gestione fornitori (`/settings/suppliers`): lista globali + per-org, dettaglio con 38 famiglie editabili inline, calcolo sconto live, dialog "nuovo fornitore" per la propria org
+- [x] Tabelle `supplier_product_families` (34 famiglie Saint-Gobain caricate: Gyproc + Isover + Eurocoustic) e `customer_discounts` (34 sconti riservati Impresa B4T popolati dai PDF condizioni)
+- [x] View `materials_with_pricing` (RLS-aware, SECURITY INVOKER) che calcola net_price live in base ai customer_discounts dell'org corrente. Backfill `unit_price` con netto calcolato per i 1066 materiali Saint-Gobain
+- [x] MaterialsTable mostra prezzo netto + listino barrato + sconto totale calcolato dinamicamente
+- [x] Sconti cumulativi N livelli (array `discounts NUMERIC[]`) invece di 2 colonne fisse
+- [x] Trigger automatico: modifica `customer_discounts` → ricalcolo immediato `unit_price` per tutti i materiali della famiglia coinvolta
+- [x] Configuratore mostra prezzo netto + listino barrato + sconto in LayerDetails e GroupedMaterialSelect (componente riusabile MaterialPriceTag)
+- [x] Banner riepilogo risparmio nella pagina Materiali (totale listino vs netto vs % risparmio medio)
+- [x] Breakdown risparmio nel preview stratigrafia (listino vs netto materiali, calcolo on-the-fly via rapporto list/unit price per ogni layer)
+- [x] Migrazione materials.discount legacy (TEXT) → customer_discounts strutturato per Knauf (15 mat. in 5 famiglie) e Fassa Bortolo (6 mat. in 1 famiglia). Sistema sconti unificato per tutti i fornitori.
+- [x] Ricalcolo costi delle 5 stratigrafie esistenti dopo i nuovi listini (layer + aggregati a livello stratigrafia + estimate_stratigraphies non-snapshot). Fix bug screw_cost per scatole con box_pieces.
 - [ ] Storage Supabase per allegati listini (PDF / Excel)
-- [ ] **Importatore listini fornitori**: Excel/CSV con mapping colonne
+- [x] **Importatore listini Saint-Gobain**: parser 7 sheet, validazione, anteprima, upsert, archive missing. UI in `/materials/import`.
+- [x] **Primo import reale eseguito**: catalogo Saint-Gobain a 1.066 prodotti attivi (vs 60 di partenza), 100% con famiglia + sconto B4T attribuiti. 4 famiglie aggiuntive scoperte (H15, H17, H33, H35) e create.
+- [ ] Importer Knauf e Fassa Bortolo (template aggiuntivi)
+- [ ] Mapping manuale fallback per fornitori esotici
 - [ ] **Libreria stratigrafie certificate** condivisa: digitalizzazione fascicoli pubblici (Knauf W11x, Saint-Gobain Gyproc Wall Solutions, Siniat LaDura/Pregybel, Fassa Bortolo, Rigips)
 - [ ] Calcoli tecnici certificati: EI (EN 13501), Rw (EN ISO 717), λ (EN 12667)
 - [ ] Esportazioni: RDA cantiere migliorata, capitolato tecnico, schede prodotto

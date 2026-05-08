@@ -30,10 +30,15 @@ const StructureSuggestionDialog = ({
     guide: 'Guide'
   };
 
-  // Estrai lo spessore e aggiungi testo esplicativo
-  const spessore = suggestion.suggestedMaterial.thickness
-    ? `${suggestion.suggestedMaterial.thickness} mm`
-    : 'n/a';
+  // Sezione utile del profilo (mm), preferito su thickness (che per i profili è NULL)
+  const sezione = suggestion.suggestedMaterial.width
+    ? `sezione ${suggestion.suggestedMaterial.width} mm`
+    : suggestion.suggestedMaterial.thickness
+      ? `${suggestion.suggestedMaterial.thickness} mm`
+      : 'n/a';
+  const lamiera = suggestion.suggestedMaterial.sheet_thickness
+    ? ` · lamiera ${suggestion.suggestedMaterial.sheet_thickness} mm`
+    : '';
 
   return (
     <Dialog open={!!suggestion} onOpenChange={() => onDecline()}>
@@ -44,16 +49,16 @@ const StructureSuggestionDialog = ({
             <Badge variant="outline">{suggestion.suggestedMaterial.supplier}</Badge>
           </DialogTitle>
           <DialogDescription>
-            Hai selezionato un materiale di tipo{' '}
+            Hai selezionato un{' '}
             <strong>
               {suggestion.type === 'montanti' ? 'Guida' : 'Montante'}
             </strong>
-            {' '}con <strong>spessore {spessore}</strong>.{` `}
+            {' '}con <strong>{sezione}{lamiera}</strong>.{` `}
             Vuoi aggiungere automaticamente anche{' '}
             <strong>
               {categoryLabels[suggestion.type].toLowerCase()}
-            </strong> {` `}
-            compatibili dello stesso spessore e dello stesso fornitore?
+            </strong>{' '}
+            abbinati dello stesso fornitore?
           </DialogDescription>
         </DialogHeader>
 
@@ -70,7 +75,7 @@ const StructureSuggestionDialog = ({
                 <span>Prezzo:</span> €{suggestion.suggestedMaterial.unit_price.toFixed(2)}/{suggestion.suggestedMaterial.unit}
               </div>
               <div>
-                <span>Spessore:</span> {spessore}
+                <span>Sezione:</span> {sezione}{lamiera}
               </div>
             </div>
           </div>

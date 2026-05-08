@@ -13,7 +13,6 @@ import { MaterialCategory } from '@/types';
 import { categories, MaterialFormData } from './forms/MaterialFormData';
 import { useMaterialSubmit } from './hooks/useMaterialSubmit';
 import { DatabaseMaterial } from '@/hooks/useMaterials';
-import { applyCumulativeDiscounts, validateDiscountString } from '@/utils/discountUtils';
 import BoardMaterialForm from './forms/BoardMaterialForm';
 import FrameMaterialForm from './forms/FrameMaterialForm';
 import GuideMaterialForm from './forms/GuideMaterialForm';
@@ -73,6 +72,7 @@ const EditMaterialDialog = ({ open, onOpenChange, onSuccess, material }: EditMat
     profile_type: 'C',
     surface_finish: 'zincatura_z140',
     discount: '',
+    extra_discount: '0',
     list_price: '',
     is_variable_thickness: false,
     mechanical_performance: '',
@@ -91,35 +91,7 @@ const EditMaterialDialog = ({ open, onOpenChange, onSuccess, material }: EditMat
   });
   
   const { submitMaterial, isSubmitting } = useMaterialSubmit(onOpenChange, onSuccess);
-
-  // Calcola automaticamente il prezzo finale quando cambiano prezzo di listino, sconto, sfrido e discarica
-  useEffect(() => {
-    const listPrice = parseFloat(formData.list_price || '0');
-    const discount = formData.discount?.trim();
-    const wastePercentage = parseFloat(formData.waste_percentage || '0');
-    const disposalPercentage = parseFloat(formData.disposal_percentage || '0');
-    
-    if (listPrice > 0) {
-      let finalPrice = listPrice;
-      
-      // Applica gli sconti se presenti
-      if (discount && validateDiscountString(discount)) {
-        finalPrice = applyCumulativeDiscounts(listPrice, discount);
-      }
-      
-      // Aggiungi sfrido e discarica
-      const wasteAmount = (finalPrice * wastePercentage) / 100;
-      const disposalAmount = (finalPrice * disposalPercentage) / 100;
-      finalPrice = finalPrice + wasteAmount + disposalAmount;
-      
-      // Per le viti, usa 4 decimali, per altri materiali 2 decimali
-      const decimals = formData.category === 'screw' ? 4 : 2;
-      setFormData(prev => ({ 
-        ...prev, 
-        unit_price: finalPrice.toFixed(decimals)
-      }));
-    }
-  }, [formData.list_price, formData.discount, formData.waste_percentage, formData.disposal_percentage, formData.category]);
+  // Il calcolo unit_price ora vive in MaterialPricingSection: list_price × catena famiglia × (1 - extra/100).
 
   // Popola form con campo installation_time_per_sqm quando dialog apre
   useEffect(() => {
@@ -167,6 +139,13 @@ const EditMaterialDialog = ({ open, onOpenChange, onSuccess, material }: EditMat
         profile_type: material.profile_type || 'C',
         surface_finish: material.surface_finish || 'zincatura_z140',
         discount: material.discount != null ? material.discount.toString() : '',
+        extra_discount: material.extra_discount != null ? material.extra_discount.toString() : '0',
+        family_discount_chain_display:
+          Array.isArray(material.family_discount_chain) && material.family_discount_chain.length > 0
+            ? material.family_discount_chain.map(d => `${d}%`).join(' + ')
+            : '',
+        family_discount_pct_display: material.family_discount_pct != null ? String(material.family_discount_pct) : '0',
+        total_discount_pct_display: material.total_discount_pct != null ? String(material.total_discount_pct) : '0',
         list_price: material.list_price != null ? material.list_price.toString() : (material.unit_price?.toString() || ''),
         is_variable_thickness: material.is_variable_thickness ?? false,
         mechanical_performance: material.mechanical_performance || '',

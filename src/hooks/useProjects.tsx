@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Project } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCurrentOrganization } from '@/contexts/OrganizationContext';
 import { toast } from 'sonner';
 
 interface CreateProjectData {
@@ -14,18 +15,26 @@ interface CreateProjectData {
 
 export const useProjects = () => {
   const { user } = useAuth();
+  const { currentOrganizationId } = useCurrentOrganization();
   const queryClient = useQueryClient();
 
   const { data: projects = [], isLoading, error } = useQuery({
-    queryKey: ['projects', user?.id],
+    queryKey: ['projects', user?.id, currentOrganizationId],
     queryFn: async () => {
       if (!user) return [];
-      
-      const { data, error } = await supabase
+
+      let query = supabase
         .from('projects')
         .select('*')
-        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
+
+      if (currentOrganizationId) {
+        query = query.eq('organization_id', currentOrganizationId);
+      } else {
+        query = query.eq('user_id', user.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.error('Error fetching projects:', error);
@@ -56,6 +65,7 @@ export const useProjects = () => {
           client: projectData.client,
           description: projectData.description,
           user_id: user.id,
+          organization_id: currentOrganizationId ?? undefined,
           status: 'active'
         })
         .select()
@@ -82,6 +92,7 @@ export const useProjects = () => {
     mutationFn: async ({ id, ...updates }: Partial<Project> & { id: string }) => {
       if (!user) throw new Error('User not authenticated');
 
+      // RLS org-based protegge: ogni membro dell'org può aggiornare i progetti dell'org.
       const { data, error } = await supabase
         .from('projects')
         .update({
@@ -92,7 +103,6 @@ export const useProjects = () => {
           updated_at: new Date().toISOString(),
         })
         .eq('id', id)
-        .eq('user_id', user.id)
         .select()
         .single();
 
@@ -117,11 +127,12 @@ export const useProjects = () => {
     mutationFn: async (projectId: string) => {
       if (!user) throw new Error('User not authenticated');
 
+      // RLS org-based: solo owner/admin dell'org possono eliminare. Il client non filtra
+      // ulteriormente per user_id (era un retaggio del modello pre-multi-tenant).
       const { error } = await supabase
         .from('projects')
         .delete()
-        .eq('id', projectId)
-        .eq('user_id', user.id);
+        .eq('id', projectId);
 
       if (error) {
         console.error('Error deleting project:', error);

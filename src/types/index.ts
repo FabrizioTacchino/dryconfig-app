@@ -85,12 +85,14 @@ export interface Layer {
 
 // Material Types - Aggiornato con le nuove sottocategorie
 export type MaterialCategory =
-  | 'board'
-  | 'structure_frame'
-  | 'structure_guide'
-  | 'insulation'
-  | 'accessory'
-  | 'screw'   // <-- ensure 'screw' is present everywhere
+  | 'board'           // Lastre per pareti/contropareti (gesso rivestito, cementizia, gessofibra, velo vetro)
+  | 'ceiling_tile'    // Pannelli sospesi a vista per controsoffitto (gesso rivestito a vista, lana minerale Eurocoustic, lana di vetro)
+  | 'structure_frame' // Profili montanti / portanti
+  | 'structure_guide' // Profili guida / cornici perimetrali
+  | 'insulation'      // Isolanti termici/acustici (lana di roccia, lana di vetro, XPS, EPS, PIR)
+  | 'accessory'       // Paraspigoli, nastri, clip, sospensioni, botole, sigillanti
+  | 'screw'           // Viti dedicate al fissaggio lastre
+  | 'finish'          // Finiture: intonaci, rasanti, primer, stucchi, malte, protezioni ignifughe
   | 'other';
 
 export interface Material {

@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { OrganizationProvider } from "@/contexts/OrganizationContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -17,6 +18,10 @@ import Admin from "./pages/Admin";
 import EstimateManagement from "./pages/EstimateManagement";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
+import Members from "./pages/Members";
+import AcceptInvite from "./pages/AcceptInvite";
+import MaterialsImport from "./pages/MaterialsImport";
+import Suppliers from "./pages/Suppliers";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -32,6 +37,7 @@ const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <OrganizationProvider>
         <BrowserRouter>
           <TooltipProvider>
             <div className="min-h-screen">
@@ -68,6 +74,11 @@ const App = () => {
                     <Materials />
                   </ProtectedRoute>
                 } />
+                <Route path="/materials/import" element={
+                  <ProtectedRoute>
+                    <MaterialsImport />
+                  </ProtectedRoute>
+                } />
                 <Route path="/admin" element={
                   <ProtectedRoute>
                     <Admin />
@@ -83,12 +94,24 @@ const App = () => {
                     <Settings />
                   </ProtectedRoute>
                 } />
+                <Route path="/settings/members" element={
+                  <ProtectedRoute>
+                    <Members />
+                  </ProtectedRoute>
+                } />
+                <Route path="/settings/suppliers" element={
+                  <ProtectedRoute>
+                    <Suppliers />
+                  </ProtectedRoute>
+                } />
+                <Route path="/invite/:token" element={<AcceptInvite />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </div>
             <Toaster />
           </TooltipProvider>
         </BrowserRouter>
+        </OrganizationProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

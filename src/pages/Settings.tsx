@@ -14,6 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Settings as SettingsIcon, Bell, Shield, Palette } from 'lucide-react';
 import { createNotification } from '@/utils/notificationUtils';
+import BackButton from '@/components/layout/BackButton';
 
 const Settings = () => {
   const { user } = useAuth();
@@ -77,6 +78,9 @@ const Settings = () => {
         <SidebarInset className="flex flex-col">
           <Header />
           <PageContainer>
+            <div className="mb-4">
+              <BackButton />
+            </div>
             <div className="mb-8">
               <h1 className="text-3xl font-bold tracking-tight">Impostazioni</h1>
               <p className="text-muted-foreground mt-1">

@@ -9,6 +9,7 @@ import GroupedMaterialSelect from './GroupedMaterialSelect';
 import LayerDetails from './LayerDetails';
 import LayerInterAxisInput from './LayerInterAxisInput';
 import { useSmartScrewSelection } from '../hooks/useSmartScrewSelection';
+import { computeScrewCostPerSqm, getScrewPricePerPiece } from '@/utils/screwPricing';
 
 interface IntegratedBoardLayerItemProps {
   layer: Layer;
@@ -60,6 +61,12 @@ const IntegratedBoardLayerItem = ({
   const boardLayers = allLayers.filter(l => l.material?.category === 'board');
   const totalBoardLayers = boardLayers.length;
   const currentLayerPosition = boardLayers.findIndex(l => l.id === layer.id) + 1;
+  // Spessore pacchetto totale dei layer board: somma effettiva (rispetta override
+  // dello spessore impostato sul layer, fallback a material.thickness).
+  const totalBoardThicknessMm = boardLayers.reduce(
+    (sum, l) => sum + (Number(l.thickness) || Number(l.material?.thickness) || 0),
+    0,
+  );
 
   console.log('[IntegratedBoardLayerItem] 🏗️ ENHANCED LAYER ANALYSIS:', {
     layerId: layer.id,
@@ -73,11 +80,13 @@ const IntegratedBoardLayerItem = ({
   });
 
   // Enhanced smart screw selection with dependency on material changes
-  const { screwMaterials, suggestedScrew, suggestedQuantity } = useSmartScrewSelection({
+  const { screwMaterials, suggestedScrew, suggestedQuantity, recommendation } = useSmartScrewSelection({
     boardMaterial: layer.material,
     allMaterials: availableMaterials,
     totalBoardLayers,
-    currentLayerPosition
+    currentLayerPosition,
+    currentLayerThicknessMm: Number(layer.thickness) || layer.material?.thickness || undefined,
+    totalThicknessMm: totalBoardThicknessMm > 0 ? totalBoardThicknessMm : undefined,
   });
 
   // Local state for screw quantity management
@@ -236,16 +245,27 @@ const IntegratedBoardLayerItem = ({
           {/* Enhanced Screw Selection with Smart System */}
           {layer.material && layer.material.category === 'board' && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-3">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Wrench className="h-4 w-4 text-blue-600" />
                 <span className="text-sm font-medium text-blue-700">Vite</span>
                 {suggestedScrew && (
-                  <span className="text-xs text-green-600 bg-green-50 px-1 rounded">
+                  <span className="text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded font-medium">
                     🎯 Auto: {suggestedScrew.code}
                   </span>
                 )}
+                <span className="text-[11px] text-blue-700 bg-white border border-blue-200 px-1.5 py-0.5 rounded">
+                  {recommendation.mappedBoardType.replace(/_/g, ' ')}
+                </span>
+                <span className="text-[11px] text-blue-700 bg-white border border-blue-200 px-1.5 py-0.5 rounded">
+                  pos {currentLayerPosition}/{totalBoardLayers} · {recommendation.layerPositionRole.replace(/_/g, ' ')}
+                </span>
               </div>
-              
+
+              {/* Motivazione tecnica della scelta (regola UNI 11424 / Knauf D11) */}
+              <div className="text-xs text-gray-700 bg-white border border-blue-100 rounded px-2 py-1.5">
+                <span className="font-medium">📐 Regola: </span>{recommendation.reason}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-gray-600 mb-1 block">Tipo Vite</label>
@@ -255,9 +275,11 @@ const IntegratedBoardLayerItem = ({
                     onMaterialChange={handleScrewMaterialChange}
                   />
                 </div>
-                
+
                 <div>
-                  <label className="text-xs text-gray-600 mb-1 block">Quantità per m²</label>
+                  <label className="text-xs text-gray-600 mb-1 block">
+                    Quantità per m² <span className="text-gray-400">(suggerito: {suggestedQuantity})</span>
+                  </label>
                   <input
                     type="number"
                     value={localScrewQuantity}
@@ -269,22 +291,35 @@ const IntegratedBoardLayerItem = ({
                   />
                 </div>
               </div>
-              
-              {/* Enhanced compatibility info */}
-              {screwMaterials.length > 0 && (
-                <div className="text-xs text-blue-700">
-                  ✅ {screwMaterials.length} viti compatibili disponibili
-                  {layer.screwMaterial && (
-                    <span className="ml-2">
-                      • Costo: €{((layer.screwMaterial.unit_price || 0) * (layer.screwQuantity || 0)).toFixed(3)}/m²
-                    </span>
+
+              {/* Stato compatibilità */}
+              {recommendation.candidates.length > 0 && (
+                <div className="text-xs text-green-700">
+                  ✅ {recommendation.candidates.length} {recommendation.candidates.length === 1 ? 'vite consigliata' : 'viti consigliate'}
+                  {recommendation.byBoardType.length > recommendation.candidates.length && (
+                    <span className="text-gray-500"> · {recommendation.byBoardType.length - recommendation.candidates.length} compatibili ma più corte</span>
                   )}
+                  {layer.screwMaterial && (() => {
+                    const pricePerPiece = getScrewPricePerPiece(layer.screwMaterial);
+                    const costPerSqm = computeScrewCostPerSqm(layer.screwMaterial, layer.screwQuantity || 0);
+                    return (
+                      <span className="ml-2">
+                        • €{pricePerPiece.toFixed(4)}/pz × {layer.screwQuantity || 0} = <strong>€{costPerSqm.toFixed(3)}/m²</strong>
+                      </span>
+                    );
+                  })()}
                 </div>
               )}
-              
-              {screwMaterials.length === 0 && (
-                <div className="text-xs text-orange-700 bg-orange-50 px-2 py-1 rounded">
-                  ⚠️ Nessuna vite compatibile trovata per questo tipo di materiale
+
+              {recommendation.candidates.length === 0 && recommendation.byBoardType.length > 0 && (
+                <div className="text-xs text-orange-700 bg-orange-50 border border-orange-200 px-2 py-1 rounded">
+                  ⚠️ Nessuna vite di lunghezza ≥ {recommendation.requiredLength.toFixed(0)} mm tra quelle compatibili. Mostrate {recommendation.byBoardType.length} viti compatibili più corte — verifica manualmente.
+                </div>
+              )}
+
+              {recommendation.byBoardType.length === 0 && (
+                <div className="text-xs text-red-700 bg-red-50 border border-red-200 px-2 py-1 rounded">
+                  ⚠️ Nessuna vite compatibile con <strong>{recommendation.mappedBoardType.replace(/_/g, ' ')}</strong> nel catalogo. Importa un listino o aggiungi viti dal pannello materiali.
                 </div>
               )}
             </div>

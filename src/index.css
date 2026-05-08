@@ -14,17 +14,17 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    --primary: 215 65% 34%;
+    --primary: 218 70% 28%;
     --primary-foreground: 210 40% 98%;
 
-    --secondary: 214 59% 48%;
+    --secondary: 218 45% 48%;
     --secondary-foreground: 210 40% 98%;
 
     --muted: 210 40% 96%;
     --muted-foreground: 215 16% 47%;
 
-    --accent: 35 92% 51%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 24 92% 52%;
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 210 40% 98%;
@@ -37,17 +37,17 @@
 
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 215 16% 47%;
-    --sidebar-primary: 215 65% 34%;
+    --sidebar-primary: 218 70% 28%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 210 40% 96%;
-    --sidebar-accent-foreground: 215 65% 34%;
+    --sidebar-accent-foreground: 218 70% 28%;
     --sidebar-border: 214 32% 91%;
     --sidebar-ring: 214 59% 48%;
 
     /* Construction theme colors */
-    --construction-primary: 215 65% 34%;
-    --construction-secondary: 214 59% 48%;
-    --construction-accent: 35 92% 51%;
+    --construction-primary: 218 70% 28%;
+    --construction-secondary: 218 45% 48%;
+    --construction-accent: 24 92% 52%;
     --construction-light: 210 40% 96%;
     --construction-dark: 215 16% 47%;
   }

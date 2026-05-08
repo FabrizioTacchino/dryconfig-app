@@ -22,6 +22,15 @@ key.txt.txt
 *.pem
 secrets/
 
+# Local-only backups (not committed)
+docs/backups/
+
+# Temporary extraction caches from agent runs
+.tmp_extract/
+
+# Local screenshots (UX debug, non committate)
+screenshot/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

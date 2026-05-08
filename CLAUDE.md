@@ -76,7 +76,7 @@ npm run preview
 
 ## Cose da NON fare
 
-- ❌ NON modificare il DB di produzione direttamente. Sempre branch.
+- ⚠️ Modifiche DB prod: PER ORA dirette ammesse (vedi DECISIONS.md), ma sempre con backup locale JSON dei dati toccati. Quando ci saranno utenti paganti reinstaurare la regola "solo via branch".
 - ❌ NON committare file con chiavi/secret (`key.txt`, `.env`, ecc.).
 - ❌ NON pushare su `FabrizioTacchino/dryconfig` (vecchio repo, archiviato). Usare `dryconfig-app`.
 - ❌ NON suggerire di riscrivere in Flutter o cambiare stack (decisione presa, vedi `docs/DECISIONS.md`).

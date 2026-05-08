@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Estimate } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCurrentOrganization } from '@/contexts/OrganizationContext';
 import { toast } from 'sonner';
 import { useDuplicateEstimate } from "./useDuplicateEstimate";
 
@@ -13,13 +14,14 @@ export type CreateEstimateData = {
 
 export const useEstimates = (projectId?: string) => {
   const { user } = useAuth();
+  const { currentOrganizationId } = useCurrentOrganization();
   const queryClient = useQueryClient();
 
   const { data: estimates = [], isLoading, error } = useQuery({
-    queryKey: ['estimates', projectId || 'all'],
+    queryKey: ['estimates', projectId || 'all', currentOrganizationId],
     queryFn: async () => {
       if (!user) return [];
-      
+
       let query = supabase
         .from('estimates')
         .select(`
@@ -30,32 +32,20 @@ export const useEstimates = (projectId?: string) => {
         `)
         .order('created_at', { ascending: false });
 
-      // Se projectId è specificato, filtra per quel progetto
+      if (currentOrganizationId) {
+        query = query.eq('organization_id', currentOrganizationId);
+      }
+
       if (projectId) {
-        // Prima verifichiamo che il progetto appartenga all'utente
-        const { data: projectData, error: projectError } = await supabase
-          .from('projects')
-          .select('id')
-          .eq('id', projectId)
-          .eq('user_id', user.id)
-          .single();
-
-        if (projectError || !projectData) {
-          console.error('Project not found or access denied:', projectError);
-          return [];
-        }
-
         query = query.eq('project_id', projectId);
-      } else {
-        // Altrimenti, ottieni tutti gli estimates dei progetti dell'utente
+      } else if (!currentOrganizationId) {
+        // Fallback per utenti senza organization (caso edge): filtra via projects dell'utente
         const { data: userProjects } = await supabase
           .from('projects')
           .select('id')
           .eq('user_id', user.id);
-
         if (userProjects && userProjects.length > 0) {
-          const projectIds = userProjects.map(p => p.id);
-          query = query.in('project_id', projectIds);
+          query = query.in('project_id', userProjects.map(p => p.id));
         } else {
           return [];
         }
@@ -89,12 +79,12 @@ export const useEstimates = (projectId?: string) => {
     mutationFn: async (estimateData: CreateEstimateData) => {
       if (!user) throw new Error('User not authenticated');
 
-      // Verifichiamo che il progetto appartenga all'utente prima di creare l'estimate
+      // RLS org-based protegge: verifichiamo solo l'esistenza del progetto, non l'ownership user_id
+      // (ogni membro dell'org può creare preventivi sui progetti dell'org).
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
         .select('id')
         .eq('id', estimateData.projectId)
-        .eq('user_id', user.id)
         .single();
 
       if (projectError || !projectData) {
@@ -135,32 +125,7 @@ export const useEstimates = (projectId?: string) => {
     mutationFn: async (estimateId: string) => {
       if (!user) throw new Error('User not authenticated');
 
-      // Verifichiamo che l'estimate appartenga all'utente prima di eliminarlo
-      const { data: estimateData, error: estimateError } = await supabase
-        .from('estimates')
-        .select(`
-          id,
-          project_id
-        `)
-        .eq('id', estimateId)
-        .single();
-
-      if (estimateError || !estimateData) {
-        throw new Error('Estimate not found');
-      }
-
-      // Verifichiamo che il progetto appartenga all'utente
-      const { data: projectData, error: projectError } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('id', estimateData.project_id)
-        .eq('user_id', user.id)
-        .single();
-
-      if (projectError || !projectData) {
-        throw new Error('Access denied');
-      }
-
+      // RLS org-based protegge: ogni membro dell'org può eliminare i preventivi dell'org.
       const { error } = await supabase
         .from('estimates')
         .delete()
@@ -185,39 +150,10 @@ export const useEstimates = (projectId?: string) => {
     mutationFn: async ({ estimateId, status }: { estimateId: string; status: Estimate['status'] }) => {
       if (!user) throw new Error('User not authenticated');
 
-      console.log('Updating estimate status:', { estimateId, status });
-
-      // Verifichiamo che l'estimate appartenga all'utente prima di aggiornarlo
-      const { data: estimateData, error: estimateError } = await supabase
-        .from('estimates')
-        .select(`
-          id,
-          project_id
-        `)
-        .eq('id', estimateId)
-        .single();
-
-      if (estimateError || !estimateData) {
-        console.error('Estimate not found:', estimateError);
-        throw new Error('Estimate not found');
-      }
-
-      // Verifichiamo che il progetto appartenga all'utente
-      const { data: projectData, error: projectError } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('id', estimateData.project_id)
-        .eq('user_id', user.id)
-        .single();
-
-      if (projectError || !projectData) {
-        console.error('Project access denied:', projectError);
-        throw new Error('Access denied');
-      }
-
+      // RLS org-based protegge: ogni membro dell'org può aggiornare i preventivi dell'org.
       const { data, error } = await supabase
         .from('estimates')
-        .update({ 
+        .update({
           status,
           updated_at: new Date().toISOString()
         })

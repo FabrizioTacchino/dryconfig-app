@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { User, Mail, Building } from 'lucide-react';
+import BackButton from '@/components/layout/BackButton';
 
 const Profile = () => {
   const { user } = useAuth();
@@ -76,6 +77,9 @@ const Profile = () => {
         <SidebarInset className="flex flex-col">
           <Header />
           <PageContainer>
+            <div className="mb-4">
+              <BackButton />
+            </div>
             <div className="mb-8">
               <h1 className="text-3xl font-bold tracking-tight">Profilo</h1>
               <p className="text-muted-foreground mt-1">

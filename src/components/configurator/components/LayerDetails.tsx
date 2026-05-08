@@ -4,6 +4,7 @@ import { DatabaseMaterial } from '@/hooks/useMaterials';
 import { Badge } from '@/components/ui/badge';
 import { hasVariableThickness } from '../utils/materialUtils';
 import { calculateLayerCostPerSqm } from '../utils/costCalculationUtils';
+import MaterialPriceTag from './MaterialPriceTag';
 
 interface LayerDetailsProps {
   material?: DatabaseMaterial;
@@ -90,11 +91,14 @@ const LayerDetails = ({ material, passo, calculatedCost, finishLevel, finishLeve
             {material.code}
           </Badge>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 col-span-1">
           <span className="text-gray-600">Prezzo:</span>
-          <Badge variant="outline" className="text-xs bg-green-50 text-green-700 px-1 py-0">
-            €{(material.unit_price || 0).toFixed(2)}/{material.unit || 'mq'}
-          </Badge>
+          <MaterialPriceTag
+            netPrice={material.unit_price}
+            listPrice={material.list_price}
+            unit={material.unit || 'mq'}
+            variant="compact"
+          />
         </div>
         <div className="flex items-center gap-1">
           <span className="text-gray-600">Incidenza:</span>

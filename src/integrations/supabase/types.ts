@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -7,10 +7,10 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "12.2.3 (519615d)"
+    PostgrestVersion: "13.0.5"
   }
   public: {
     Tables: {
@@ -205,6 +205,73 @@ export type Database = {
         }
         Relationships: []
       }
+      customer_discounts: {
+        Row: {
+          created_at: string
+          discounts: number[]
+          family_id: string | null
+          id: string
+          net_price: number | null
+          notes: string | null
+          organization_id: string
+          source_document: string | null
+          supplier_id: string
+          updated_at: string
+          valid_from: string
+          valid_until: string | null
+        }
+        Insert: {
+          created_at?: string
+          discounts?: number[]
+          family_id?: string | null
+          id?: string
+          net_price?: number | null
+          notes?: string | null
+          organization_id: string
+          source_document?: string | null
+          supplier_id: string
+          updated_at?: string
+          valid_from?: string
+          valid_until?: string | null
+        }
+        Update: {
+          created_at?: string
+          discounts?: number[]
+          family_id?: string | null
+          id?: string
+          net_price?: number | null
+          notes?: string | null
+          organization_id?: string
+          source_document?: string | null
+          supplier_id?: string
+          updated_at?: string
+          valid_from?: string
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_discounts_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_product_families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_discounts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_discounts_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       estimate_stratigraphies: {
         Row: {
           area: number
@@ -366,6 +433,7 @@ export type Database = {
           id: string
           name: string
           notes: string | null
+          organization_id: string | null
           project_id: string
           status: Database["public"]["Enums"]["estimate_status"]
           total_amount: number
@@ -378,6 +446,7 @@ export type Database = {
           id?: string
           name: string
           notes?: string | null
+          organization_id?: string | null
           project_id: string
           status?: Database["public"]["Enums"]["estimate_status"]
           total_amount?: number
@@ -390,6 +459,7 @@ export type Database = {
           id?: string
           name?: string
           notes?: string | null
+          organization_id?: string | null
           project_id?: string
           status?: Database["public"]["Enums"]["estimate_status"]
           total_amount?: number
@@ -397,6 +467,13 @@ export type Database = {
           version?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "estimates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "estimates_project_id_fkey"
             columns: ["project_id"]
@@ -528,10 +605,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "layers_material_id_fkey"
+            columns: ["material_id"]
+            isOneToOne: false
+            referencedRelation: "materials_with_pricing"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "layers_screw_material_id_fkey"
             columns: ["screw_material_id"]
             isOneToOne: false
             referencedRelation: "materials"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "layers_screw_material_id_fkey"
+            columns: ["screw_material_id"]
+            isOneToOne: false
+            referencedRelation: "materials_with_pricing"
             referencedColumns: ["id"]
           },
           {
@@ -588,13 +679,17 @@ export type Database = {
           color_hex: string | null
           compatible_board_types: string[] | null
           created_at: string
+          delivery_indicator: string | null
           density: number | null
           description: string | null
           discount: string | null
           disposal_percentage: number | null
+          ean_code: string | null
           en_520_type: string | null
           environmental_certification: string | null
           epd: string | null
+          family_code: string | null
+          family_id: string | null
           fire_class: string | null
           fire_description: string | null
           fire_performance_notes: string | null
@@ -608,18 +703,21 @@ export type Database = {
           installation_notes: string | null
           installation_time_per_sqm: number | null
           intended_use: string[] | null
+          is_active: boolean
           is_variable_thickness: boolean | null
           length: number | null
           list_price: number | null
           material_type: string | null
           mechanical_performance: string | null
           name: string
+          organization_id: string | null
           passo: number | null
           profile_type: string | null
           recycled_content: number | null
           rei_compatible: boolean | null
           sheet_thickness: number | null
           supplier: string
+          supplier_id: string | null
           surface_finish: string | null
           surface_hardness: string | null
           sustainability_notes: string | null
@@ -651,13 +749,17 @@ export type Database = {
           color_hex?: string | null
           compatible_board_types?: string[] | null
           created_at?: string
+          delivery_indicator?: string | null
           density?: number | null
           description?: string | null
           discount?: string | null
           disposal_percentage?: number | null
+          ean_code?: string | null
           en_520_type?: string | null
           environmental_certification?: string | null
           epd?: string | null
+          family_code?: string | null
+          family_id?: string | null
           fire_class?: string | null
           fire_description?: string | null
           fire_performance_notes?: string | null
@@ -671,18 +773,21 @@ export type Database = {
           installation_notes?: string | null
           installation_time_per_sqm?: number | null
           intended_use?: string[] | null
+          is_active?: boolean
           is_variable_thickness?: boolean | null
           length?: number | null
           list_price?: number | null
           material_type?: string | null
           mechanical_performance?: string | null
           name: string
+          organization_id?: string | null
           passo?: number | null
           profile_type?: string | null
           recycled_content?: number | null
           rei_compatible?: boolean | null
           sheet_thickness?: number | null
           supplier: string
+          supplier_id?: string | null
           surface_finish?: string | null
           surface_hardness?: string | null
           sustainability_notes?: string | null
@@ -714,13 +819,17 @@ export type Database = {
           color_hex?: string | null
           compatible_board_types?: string[] | null
           created_at?: string
+          delivery_indicator?: string | null
           density?: number | null
           description?: string | null
           discount?: string | null
           disposal_percentage?: number | null
+          ean_code?: string | null
           en_520_type?: string | null
           environmental_certification?: string | null
           epd?: string | null
+          family_code?: string | null
+          family_id?: string | null
           fire_class?: string | null
           fire_description?: string | null
           fire_performance_notes?: string | null
@@ -734,18 +843,21 @@ export type Database = {
           installation_notes?: string | null
           installation_time_per_sqm?: number | null
           intended_use?: string[] | null
+          is_active?: boolean
           is_variable_thickness?: boolean | null
           length?: number | null
           list_price?: number | null
           material_type?: string | null
           mechanical_performance?: string | null
           name?: string
+          organization_id?: string | null
           passo?: number | null
           profile_type?: string | null
           recycled_content?: number | null
           rei_compatible?: boolean | null
           sheet_thickness?: number | null
           supplier?: string
+          supplier_id?: string | null
           surface_finish?: string | null
           surface_hardness?: string | null
           sustainability_notes?: string | null
@@ -766,7 +878,29 @@ export type Database = {
           weight_per_sqm?: number | null
           width?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "materials_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_product_families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "materials_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "materials_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       notifications: {
         Row: {
@@ -798,6 +932,136 @@ export type Database = {
           type?: string
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      organization_invitations: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          invited_by: string | null
+          organization_id: string
+          revoked_at: string | null
+          role: Database["public"]["Enums"]["organization_role"]
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          email: string
+          expires_at?: string
+          id?: string
+          invited_by?: string | null
+          organization_id: string
+          revoked_at?: string | null
+          role?: Database["public"]["Enums"]["organization_role"]
+          token?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          invited_by?: string | null
+          organization_id?: string
+          revoked_at?: string | null
+          role?: Database["public"]["Enums"]["organization_role"]
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_invitations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_members: {
+        Row: {
+          id: string
+          invited_by: string | null
+          is_default: boolean
+          joined_at: string
+          organization_id: string
+          role: Database["public"]["Enums"]["organization_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          invited_by?: string | null
+          is_default?: boolean
+          joined_at?: string
+          organization_id: string
+          role?: Database["public"]["Enums"]["organization_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          invited_by?: string | null
+          is_default?: boolean
+          joined_at?: string
+          organization_id?: string
+          role?: Database["public"]["Enums"]["organization_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          billing_email: string | null
+          country_code: string
+          created_at: string
+          id: string
+          name: string
+          plan: string
+          settings: Json
+          slug: string
+          trial_ends_at: string | null
+          updated_at: string
+          vat_number: string | null
+        }
+        Insert: {
+          billing_email?: string | null
+          country_code?: string
+          created_at?: string
+          id?: string
+          name: string
+          plan?: string
+          settings?: Json
+          slug: string
+          trial_ends_at?: string | null
+          updated_at?: string
+          vat_number?: string | null
+        }
+        Update: {
+          billing_email?: string | null
+          country_code?: string
+          created_at?: string
+          id?: string
+          name?: string
+          plan?: string
+          settings?: Json
+          slug?: string
+          trial_ends_at?: string | null
+          updated_at?: string
+          vat_number?: string | null
         }
         Relationships: []
       }
@@ -835,6 +1099,7 @@ export type Database = {
           description: string | null
           id: string
           name: string
+          organization_id: string | null
           status: Database["public"]["Enums"]["project_status"]
           updated_at: string
           user_id: string
@@ -845,6 +1110,7 @@ export type Database = {
           description?: string | null
           id?: string
           name: string
+          organization_id?: string | null
           status?: Database["public"]["Enums"]["project_status"]
           updated_at?: string
           user_id: string
@@ -855,11 +1121,20 @@ export type Database = {
           description?: string | null
           id?: string
           name?: string
+          organization_id?: string | null
           status?: Database["public"]["Enums"]["project_status"]
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "projects_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       screw_configurations: {
         Row: {
@@ -969,6 +1244,7 @@ export type Database = {
           labor_cost_per_sqm: number | null
           material_cost_per_sqm: number | null
           name: string
+          organization_id: string | null
           screw_cost_per_sqm: number | null
           thermal_performance: number | null
           total_thickness: number
@@ -991,6 +1267,7 @@ export type Database = {
           labor_cost_per_sqm?: number | null
           material_cost_per_sqm?: number | null
           name: string
+          organization_id?: string | null
           screw_cost_per_sqm?: number | null
           thermal_performance?: number | null
           total_thickness?: number
@@ -1013,6 +1290,7 @@ export type Database = {
           labor_cost_per_sqm?: number | null
           material_cost_per_sqm?: number | null
           name?: string
+          organization_id?: string | null
           screw_cost_per_sqm?: number | null
           thermal_performance?: number | null
           total_thickness?: number
@@ -1027,6 +1305,122 @@ export type Database = {
             columns: ["certification_id"]
             isOneToOne: false
             referencedRelation: "certifications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stratigraphies_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_product_families: {
+        Row: {
+          brand: string | null
+          category: string | null
+          code: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          sort_order: number | null
+          supplier_id: string
+          updated_at: string
+        }
+        Insert: {
+          brand?: string | null
+          category?: string | null
+          code: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          sort_order?: number | null
+          supplier_id: string
+          updated_at?: string
+        }
+        Update: {
+          brand?: string | null
+          category?: string | null
+          code?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          sort_order?: number | null
+          supplier_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_product_families_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      suppliers: {
+        Row: {
+          contact_email: string | null
+          contact_phone: string | null
+          country_code: string
+          created_at: string
+          default_discount: string | null
+          id: string
+          is_active: boolean
+          logo_url: string | null
+          name: string
+          notes: string | null
+          organization_id: string | null
+          slug: string
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          contact_email?: string | null
+          contact_phone?: string | null
+          country_code?: string
+          created_at?: string
+          default_discount?: string | null
+          id?: string
+          is_active?: boolean
+          logo_url?: string | null
+          name: string
+          notes?: string | null
+          organization_id?: string | null
+          slug: string
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          contact_email?: string | null
+          contact_phone?: string | null
+          country_code?: string
+          created_at?: string
+          default_discount?: string | null
+          id?: string
+          is_active?: boolean
+          logo_url?: string | null
+          name?: string
+          notes?: string | null
+          organization_id?: string | null
+          slug?: string
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "suppliers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -1063,6 +1457,7 @@ export type Database = {
           fire_resistance_class: string | null
           id: string
           name: string
+          organization_id: string | null
           stratigraphy_id: string | null
           thermal_performance: number | null
           total_cost: number | null
@@ -1081,6 +1476,7 @@ export type Database = {
           fire_resistance_class?: string | null
           id?: string
           name: string
+          organization_id?: string | null
           stratigraphy_id?: string | null
           thermal_performance?: number | null
           total_cost?: number | null
@@ -1099,6 +1495,7 @@ export type Database = {
           fire_resistance_class?: string | null
           id?: string
           name?: string
+          organization_id?: string | null
           stratigraphy_id?: string | null
           thermal_performance?: number | null
           total_cost?: number | null
@@ -1108,6 +1505,13 @@ export type Database = {
           weight_per_sqm?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "wall_configurations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "wall_configurations_stratigraphy_id_fkey"
             columns: ["stratigraphy_id"]
@@ -1179,6 +1583,114 @@ export type Database = {
       }
     }
     Views: {
+      materials_with_pricing: {
+        Row: {
+          acoustic_performance: number | null
+          board_type: string | null
+          board_typology: string | null
+          box_pieces: number | null
+          carbon_footprint: string | null
+          category: Database["public"]["Enums"]["material_category"] | null
+          code: string | null
+          color_hex: string | null
+          compatible_board_types: string[] | null
+          created_at: string | null
+          delivery_indicator: string | null
+          density: number | null
+          description: string | null
+          discount: string | null
+          discount_chain: number[] | null
+          discount_id: string | null
+          discount_org_id: string | null
+          discount_valid_until: string | null
+          disposal_percentage: number | null
+          ean_code: string | null
+          en_520_type: string | null
+          environmental_certification: string | null
+          epd: string | null
+          family_code: string | null
+          family_id: string | null
+          fire_class: string | null
+          fire_description: string | null
+          fire_performance_notes: string | null
+          fire_resistance_class: string | null
+          fire_usage_notes: string | null
+          flexural_strength: string | null
+          has_discount: boolean | null
+          humidity_resistance_class: string | null
+          id: string | null
+          incidence_base: number | null
+          incidence_per_sqm: number | null
+          installation_notes: string | null
+          installation_time_per_sqm: number | null
+          intended_use: string[] | null
+          is_active: boolean | null
+          is_variable_thickness: boolean | null
+          length: number | null
+          list_price: number | null
+          material_type: string | null
+          mechanical_performance: string | null
+          name: string | null
+          net_price: number | null
+          organization_id: string | null
+          passo: number | null
+          profile_type: string | null
+          recycled_content: number | null
+          rei_compatible: boolean | null
+          sheet_thickness: number | null
+          supplier: string | null
+          supplier_id: string | null
+          surface_finish: string | null
+          surface_hardness: string | null
+          sustainability_notes: string | null
+          system_compatibility: string | null
+          thermal_capacity: string | null
+          thermal_conductivity: number | null
+          thermal_performance_notes: string | null
+          thickness: number | null
+          unit: string | null
+          unit_price: number | null
+          updated_at: string | null
+          valid_until: string | null
+          vapor_permeability: string | null
+          voc_class: string | null
+          waste_percentage: number | null
+          water_absorption: string | null
+          weight_per_ml: number | null
+          weight_per_sqm: number | null
+          width: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_discounts_organization_id_fkey"
+            columns: ["discount_org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "materials_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_product_families"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "materials_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "materials_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles_with_names: {
         Row: {
           created_at: string | null
@@ -1192,29 +1704,57 @@ export type Database = {
       }
     }
     Functions: {
-      has_role: {
+      accept_invitation: { Args: { p_token: string }; Returns: string }
+      cumulative_discount_factor: {
+        Args: { p_discounts: number[] }
+        Returns: number
+      }
+      default_org_id: { Args: never; Returns: string }
+      get_invitation_by_token: {
+        Args: { p_token: string }
+        Returns: {
+          expires_at: string
+          invitation_email: string
+          invitation_id: string
+          invitation_role: Database["public"]["Enums"]["organization_role"]
+          is_accepted: boolean
+          is_expired: boolean
+          is_revoked: boolean
+          organization_id: string
+          organization_name: string
+        }[]
+      }
+      has_org_role: {
         Args: {
-          _user_id: string
-          _role: Database["public"]["Enums"]["user_role"]
+          p_organization_id: string
+          p_roles: Database["public"]["Enums"]["organization_role"][]
         }
         Returns: boolean
       }
-      is_admin_or_super: {
-        Args: { _user_id: string }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["user_role"]
+          _user_id: string
+        }
         Returns: boolean
       }
-      update_comprehensive_costs: {
-        Args: Record<PropertyKey, never>
+      is_admin_or_super: { Args: { _user_id: string }; Returns: boolean }
+      is_member_of: { Args: { p_organization_id: string }; Returns: boolean }
+      org_role_in: {
+        Args: { p_organization_id: string }
+        Returns: Database["public"]["Enums"]["organization_role"]
+      }
+      resolve_family_id: {
+        Args: { p_family_code: string; p_supplier_id: string }
+        Returns: string
+      }
+      revoke_invitation: {
+        Args: { p_invitation_id: string }
         Returns: undefined
       }
-      update_comprehensive_costs_correct: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
-      }
-      update_comprehensive_costs_final: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
-      }
+      update_comprehensive_costs: { Args: never; Returns: undefined }
+      update_comprehensive_costs_correct: { Args: never; Returns: undefined }
+      update_comprehensive_costs_final: { Args: never; Returns: undefined }
     }
     Enums: {
       estimate_status: "draft" | "pending" | "approved" | "contracted"
@@ -1226,6 +1766,7 @@ export type Database = {
         | "accessory"
         | "other"
         | "screw"
+      organization_role: "owner" | "admin" | "manager" | "technician" | "viewer"
       project_status: "active" | "completed" | "archived"
       user_role:
         | "user"
@@ -1371,6 +1912,7 @@ export const Constants = {
         "other",
         "screw",
       ],
+      organization_role: ["owner", "admin", "manager", "technician", "viewer"],
       project_status: ["active", "completed", "archived"],
       user_role: [
         "user",

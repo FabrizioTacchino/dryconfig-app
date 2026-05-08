@@ -71,11 +71,24 @@ const GroupedMaterialSelect = ({ material_id, materials, onMaterialChange }: Gro
                 </SelectLabel>
                 {groupMaterials
                   .filter(material => material.id && material.id.trim() !== '') // Filtra materiali con ID validi
-                  .map(material => (
-                    <SelectItem key={material.id} value={material.id} className="pl-4">
-                      {material.name} - {material.supplier} - (€{material.unit_price.toFixed(2)}/{material.unit})
-                    </SelectItem>
-                  ))}
+                  .map(material => {
+                    const hasDiscount = material.list_price != null && material.list_price > (material.unit_price ?? 0) + 0.001;
+                    return (
+                      <SelectItem key={material.id} value={material.id} className="pl-4">
+                        <span className="inline-flex items-center gap-2">
+                          <span>{material.name} — {material.supplier}</span>
+                          <span className="font-medium text-green-700">
+                            €{material.unit_price.toFixed(2)}/{material.unit}
+                          </span>
+                          {hasDiscount && (
+                            <span className="text-[10px] text-muted-foreground line-through">
+                              €{material.list_price!.toFixed(2)}
+                            </span>
+                          )}
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
               </SelectGroup>
             );
           })

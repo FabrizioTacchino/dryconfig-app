@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
+import { Logo } from '@/components/brand/Logo';
 
 const Auth = () => {
   const [email, setEmail] = useState('');
@@ -60,23 +61,34 @@ const Auth = () => {
     setLoading(true);
 
     try {
+      const trimmedCompany = company.trim();
+      if (!trimmedCompany) {
+        toast({
+          title: "Manca il nome azienda",
+          description: 'Inserisci il nome della tua azienda per continuare.',
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             name,
-            company,
+            company: trimmedCompany,
           }
         }
       });
 
       if (error) throw error;
-      
+
       if (data.user) {
         toast({
           title: "Registrazione completata",
-          description: 'Controlla la tua email per confermare l\'account.',
+          description: `Spazio "${trimmedCompany}" creato. Controlla la tua email per confermare l'account.`,
         });
       }
     } catch (error: any) {
@@ -94,7 +106,9 @@ const Auth = () => {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">DryConfig</CardTitle>
+          <div className="flex justify-center mb-2">
+            <Logo size={40} />
+          </div>
           <CardDescription>
             Sistema di configurazione e preventivazione pareti a secco
           </CardDescription>
@@ -150,14 +164,19 @@ const Auth = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="signup-company">Azienda (opzionale)</Label>
+                  <Label htmlFor="signup-company">Nome azienda</Label>
                   <Input
                     id="signup-company"
                     type="text"
-                    placeholder="la tua azienda"
+                    placeholder="es. Impresa Rossi S.r.l."
                     value={company}
                     onChange={(e) => setCompany(e.target.value)}
+                    required
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Creeremo per te uno spazio dedicato con 7 giorni di prova gratuita.
+                    Puoi invitare colleghi più tardi.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-email">Email</Label>

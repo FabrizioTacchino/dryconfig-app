@@ -5,6 +5,7 @@ import { UnifiedStratigraphy } from '@/hooks/useUnifiedStratigraphies';
 import { useMaterials } from '@/hooks/useMaterials';
 import StratigraphyExportButton from '../StratigraphyExportButton';
 import StratigraphyPreview from '../StratigraphyPreview';
+import StratigraphySavingsBreakdown from './StratigraphySavingsBreakdown';
 
 interface StratigraphyDetailsProps {
   customStratigraphyData?: any;
@@ -108,13 +109,20 @@ const StratigraphyDetails = ({
       </div>
 
       {/* PREVIEW IDENTICO AL BUILDER - STESSO COMPONENTE CON STESSI PARAMETRI E BREAKDOWN */}
-      <StratigraphyPreview 
+      <StratigraphyPreview
         layers={layersForPreview}
         totalThickness={totalThickness}
         className="w-full"
         showLayerCosts={true}
         advancedBreakdown={comprehensiveCost}
         useStoredCosts={true} // 🎯 Modalità visualizzazione: usa costi salvati invece di calcoli live
+      />
+
+      {/* Riepilogo risparmio materiali (listino vs netto) */}
+      <StratigraphySavingsBreakdown
+        layers={layersForPreview}
+        netMaterialCostPerSqm={comprehensiveCost?.materialCost ?? null}
+        className="w-full"
       />
     </div>
   );

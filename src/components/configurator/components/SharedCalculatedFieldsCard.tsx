@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Calculator, Wrench } from 'lucide-react';
 import { DatabaseMaterial } from '@/hooks/useMaterials';
+import { getScrewPricePerPiece } from '@/utils/screwPricing';
 
 interface SharedCalculatedFieldsCardProps {
   totalThickness: number;
@@ -24,14 +25,15 @@ const SharedCalculatedFieldsCard = ({
   layers = [],
   materials = []
 }: SharedCalculatedFieldsCardProps) => {
-  // For integrated system, calculate screws from layer data directly
+  // For integrated system, calculate screws from layer data directly.
+  // Vite vendute a scatola: il prezzo "cad" è unit_price/box_pieces, non unit_price.
   const integratedScrews = layers
     .filter(layer => layer.screwMaterial && layer.screwQuantity)
     .map(layer => ({
       screw: layer.screwMaterial,
       quantityPerSqm: layer.screwQuantity,
       totalCostPerSqm: layer.screwCostPerSqm || 0,
-      unitPrice: layer.screwMaterial.unit_price || 0,
+      pricePerPiece: getScrewPricePerPiece(layer.screwMaterial),
       label: `Per ${layer.material?.name || 'layer'}`
     }));
 
@@ -100,7 +102,7 @@ const SharedCalculatedFieldsCard = ({
                   <span className="block font-medium text-sm">{entry.screw.name}</span>
                   <span className="block text-xs text-muted-foreground">{entry.label}</span>
                   <span className="block text-xs">
-                    Costo: <span className="font-semibold">€{entry.unitPrice.toFixed(3)}</span> cad &middot; <span className="font-semibold">€{entry.totalCostPerSqm.toFixed(2)}</span>/m²
+                    €{entry.pricePerPiece.toFixed(4)}/pz × {entry.quantityPerSqm} viti/m² = <span className="font-semibold">€{entry.totalCostPerSqm.toFixed(3)}/m²</span>
                   </span>
                 </div>
               ))}
