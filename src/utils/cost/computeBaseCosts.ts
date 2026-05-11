@@ -4,14 +4,18 @@
  *  - useBulkUpdateEstimateStratigraphyPrices (aggiorna prezzi preventivo, bulk)
  *  - useUpdateEstimateStratigraphy (single-row aggiorna)
  *
- * Prima di questa util le tre pipeline duplicavano la stessa formula con
- * piccole divergenze (silent zero, screw time hardcoded, ecc.). Ora c'è una
- * sola sorgente di verità.
+ * NOTA F4 (chiusura): il configuratore V2 (preview live) usa una formula
+ * DIVERSA in `computeStratigraphyCosts` (category-aware: ml/m² montanti,
+ * cover % isolante, ecc.). Quella è più sofisticata per il rendering del
+ * breakdown, ma per il save i due flussi ora hanno la STESSA unità di
+ * tempo (minuti). La divergenza residua sta solo nel modo di calcolare le
+ * quantità (incidence_per_sqm flat qui vs category-aware là). Tollerabile
+ * finché incidence_per_sqm dei materiali è ben popolato.
  *
- * NOTA: il configuratore V2 (preview live) usa una formula DIVERSA in
- * `computeStratigraphyCosts` (category-aware: ml/m² montanti, cover %
- * isolante, ecc.). Quella è più sofisticata ma non viene applicata al save:
- * fixarlo è fuori scope F3, va trattato in una fase dedicata.
+ * Convenzione tempo posa:
+ *  - `materials.installation_time_per_sqm` nel DB è in ORE per unità del
+ *    materiale (es. 0.10 = 6 min/m² per una lastra). L'adapter converte
+ *    in MINUTI per coerenza con il resto della formula.
  */
 
 /** Minuti di posa per ogni vite (stima media; da rendere configurabile in futuro). */
@@ -110,13 +114,18 @@ export function computeBaseCosts(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function dbLayerToCalcLayer(dbLayer: any): CalcLayer {
   const mat = dbLayer?.materials ?? null;
+  // installation_time_per_sqm nel DB è in ORE → converto in MINUTI.
+  // Senza questa conversione la manodopera veniva sottostimata ~60x
+  // (preview V2 aveva la formula giusta, save no — F4 chiusura).
+  const installTimeHours = Number(mat?.installation_time_per_sqm ?? 0);
+  const installTimeMinutes = installTimeHours * 60;
   return {
     thickness: Number(dbLayer?.thickness ?? 0),
     material: mat
       ? {
           unitPrice: Number(mat.unit_price ?? 0),
           incidencePerSqm: Number(mat.incidence_per_sqm ?? 1),
-          installationTimeMinutes: Number(mat.installation_time_per_sqm ?? 0),
+          installationTimeMinutes: installTimeMinutes,
         }
       : null,
     screwCostPerSqm: Number(dbLayer?.screw_cost_per_sqm ?? 0),

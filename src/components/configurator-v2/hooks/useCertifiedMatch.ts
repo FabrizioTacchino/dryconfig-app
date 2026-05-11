@@ -73,7 +73,11 @@ export function useCertifiedMatch(
   const { data: certifiedList = [], isLoading } = useQuery<CertifiedRow[]>({
     queryKey: ['certified-stratigraphies', currentOrganizationId],
     enabled: !!currentOrganizationId && !isCurrentCertified,
-    staleTime: 1000 * 60 * 10,
+    // Cache più corta: 2 min. Le certificate possono essere create/modificate
+    // da altri membri dell'org mentre l'utente sta usando il configuratore.
+    staleTime: 1000 * 60 * 2,
+    // Re-fetch quando il componente monta (es. entri nel configuratore di nuovo)
+    refetchOnMount: 'always',
     queryFn: async () => {
       const { data, error } = await supabase
         .from('stratigraphies')
@@ -115,12 +119,14 @@ export function useCertifiedMatch(
     }
 
     let best: CertifiedMatch | null = null;
+    const scoredCandidates: Array<{ name: string; score: number; reason?: string }> = [];
     for (const cert of certifiedList) {
       if (cert.id === currentId) continue;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const certLayers = (cert.layers ?? []).slice().sort((a: any, b: any) => a.position - b.position);
       const certFp: LayerFingerprint[] = fingerprintComposition(certLayers);
       const cmp = compareCompositions(currentFp, certFp);
+      scoredCandidates.push({ name: cert.name, score: cmp.score, reason: cmp.reason });
       if (cmp.score >= MIN_MATCH_SCORE && (!best || cmp.score > best.score)) {
         best = {
           id: cert.id,
@@ -133,6 +139,15 @@ export function useCertifiedMatch(
           score: cmp.score,
         };
       }
+    }
+    // Log defensive: utile per capire perché il banner non scatta.
+    // Visibile solo se DevTools console è aperta.
+    if (certifiedList.length > 0 && !best) {
+      console.debug('[useCertifiedMatch] no match above threshold', {
+        currentLayers: currentFp.length,
+        candidates: scoredCandidates,
+        threshold: MIN_MATCH_SCORE,
+      });
     }
     return { match: best, candidateCount: certifiedList.length, isLoading };
   }, [layers, certifiedList, isCurrentCertified, currentId, isLoading]);
