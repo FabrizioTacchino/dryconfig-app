@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { MaterialFormData } from './MaterialFormData';
+import { useWasteFactors } from '@/hooks/useWasteFactors';
 
 interface MaterialPricingSectionProps {
   formData: MaterialFormData;
@@ -39,6 +40,11 @@ const MaterialPricingSection = ({ formData, setFormData, isSubmitting }: Materia
 
   const totalPct = (1 - familyFactor * (1 - extraPct / 100)) * 100;
   const hasFamily = familyPct > 0.001;
+
+  // Default sfrido per categoria (Settings → Sfridi). Mostrato come placeholder
+  // quando il campo è vuoto (= "usa categoria").
+  const { wasteMap } = useWasteFactors();
+  const categoryWasteDefault = wasteMap[formData.category ?? ''] ?? 0;
 
   // Determina il numero di decimali da mostrare
   const getStepValue = () => {
@@ -115,20 +121,21 @@ const MaterialPricingSection = ({ formData, setFormData, isSubmitting }: Materia
         </div>
 
         <div>
-          <Label htmlFor="waste_percentage">Sfrido (%) *</Label>
+          <Label htmlFor="waste_percentage">Sfrido (%)</Label>
           <Input
             id="waste_percentage"
             type="number"
             step="0.1"
             min="0"
             max="100"
-            value={formData.waste_percentage}
+            value={formData.waste_percentage ?? ''}
             onChange={(e) => setFormData(prev => ({ ...prev, waste_percentage: e.target.value }))}
             disabled={isSubmitting}
-            required
+            placeholder={`Default categoria: ${categoryWasteDefault}%`}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Percentuale di sfrido da aggiungere al prezzo scontato
+            Vuoto = usa il default della categoria (configurabile in <Link to="/settings" className="underline">Impostazioni → Sfridi</Link>).
+            Compila qui solo per sovrascrivere il default su questo materiale.
           </p>
         </div>
 

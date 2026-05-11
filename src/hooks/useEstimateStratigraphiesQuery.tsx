@@ -67,7 +67,8 @@ export const useEstimateStratigraphiesQuery = (estimateId?: string) => {
                 compatible_board_types,
                 length,
                 box_pieces,
-                installation_time_per_sqm
+                installation_time_per_sqm,
+                waste_percentage
               ),
               screw_materials:materials!layers_screw_material_id_fkey (
                 id,
@@ -80,7 +81,8 @@ export const useEstimateStratigraphiesQuery = (estimateId?: string) => {
                 incidence_per_sqm,
                 length,
                 box_pieces,
-                installation_time_per_sqm
+                installation_time_per_sqm,
+                waste_percentage
               )
             )
           )

@@ -122,7 +122,7 @@ export const initialFormData: MaterialFormData = {
   list_price: '', // AGGIUNTO
   box_pieces: '', // <---- AGGIUNTO QUI
   compatible_board_types: '', // <---- AGGIUNTO QUI
-  waste_percentage: '10', // <---- SFRIDO DEFAULT 10%
+  waste_percentage: '', // vuoto = usa default categoria (Settings → Sfridi)
   disposal_percentage: '4', // <---- DISCARICA DEFAULT 4%
 };
 

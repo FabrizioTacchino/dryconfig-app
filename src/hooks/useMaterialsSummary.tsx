@@ -2,6 +2,25 @@ import { useMemo } from 'react';
 import { EstimateStratigraphy } from '@/types/estimateStratigraphy';
 import { useWasteFactors } from './useWasteFactors';
 
+/**
+ * Risolve lo sfrido per un materiale seguendo la priorità:
+ *   1. material.waste_percentage (se NOT NULL) — override esplicito sul singolo materiale
+ *   2. wasteMap[category]                       — Settings → Sfridi per organization
+ *   3. 0                                        — fallback safe
+ */
+function resolveWaste(
+  material: { waste_percentage?: number | null; category?: string },
+  wasteMap: Record<string, number>,
+  fallbackCategory?: string,
+): number {
+  const override = material.waste_percentage;
+  if (override !== null && override !== undefined && Number.isFinite(Number(override))) {
+    return Number(override);
+  }
+  const cat = (fallbackCategory ?? material.category) ?? '';
+  return Number(wasteMap[cat] ?? 0);
+}
+
 export interface MaterialSummaryItem {
   materialId: string;
   materialName: string;
@@ -124,7 +143,7 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
             boxPieces: matBox > 0 ? matBox : undefined,
             theoreticalQuantity: 0,
             usageUnit: matUnit,
-            wastePercentage: wasteMap[material.category] ?? 0,
+            wastePercentage: resolveWaste(material, wasteMap),
             stratigraphyNames: [],
           }));
           a.theoreticalQuantity += theoreticalQty;
@@ -152,7 +171,7 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
             totalPieces: 0,
             theoreticalQuantity: 0,
             usageUnit: 'pz',
-            wastePercentage: wasteMap['screw'] ?? 0,
+            wastePercentage: resolveWaste(screw, wasteMap, 'screw'),
             stratigraphyNames: [],
           }));
           a.totalPieces = (a.totalPieces ?? 0) + piecesTheo;
@@ -188,7 +207,11 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
           boxPieces: box > 0 ? box : undefined,
           theoreticalQuantity: 0,
           usageUnit: matUnit || 'pz',
-          wastePercentage: wasteMap['finish'] ?? 0,
+          wastePercentage: resolveWaste(
+            { waste_percentage: comp.waste_percentage as number | null | undefined, category: 'finish' },
+            wasteMap,
+            'finish',
+          ),
           stratigraphyNames: [],
         }));
         a.theoreticalQuantity += theoTotalQty;

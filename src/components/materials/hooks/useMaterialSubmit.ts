@@ -79,8 +79,11 @@ export const useMaterialSubmit = (onOpenChange: (open: boolean) => void, onSucce
         box_pieces: formData.box_pieces ? parseInt(formData.box_pieces) : null,
         compatible_board_types: formData.compatible_board_types ? 
           formData.compatible_board_types.split(',').map(s => s.trim()).filter(Boolean) : null,
-        // Campi per sfrido e discarica
-        waste_percentage: formData.waste_percentage ? parseFloat(formData.waste_percentage) : 10,
+        // Campi per sfrido e discarica.
+        // waste_percentage: vuoto = NULL = usa default categoria (Settings → Sfridi).
+        waste_percentage: formData.waste_percentage && formData.waste_percentage.trim() !== ''
+          ? parseFloat(formData.waste_percentage)
+          : null,
         disposal_percentage: formData.disposal_percentage ? parseFloat(formData.disposal_percentage) : 4,
       };
 

@@ -162,7 +162,8 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
                   thermal_conductivity,
                   acoustic_performance,
                   fire_resistance_class,
-                  installation_time_per_sqm
+                  installation_time_per_sqm,
+                  waste_percentage
                 ),
                 screw_materials:materials!layers_screw_material_id_fkey (
                   id,
@@ -173,7 +174,8 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
                   unit,
                   length,
                   box_pieces,
-                  installation_time_per_sqm
+                  installation_time_per_sqm,
+                  waste_percentage
                 )
               )
             `)
@@ -222,10 +224,12 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
             continue;
           }
 
-          // F7.7: ricalcola anche il finish_cost dai componenti snapshot coi
-          // prezzi correnti (i materiali finitura possono aver cambiato prezzo).
+          // F7.7 + F9.5: ricalcola finish_cost dai componenti snapshot coi
+          // prezzi correnti (i materiali finitura possono aver cambiato prezzo)
+          // e rinfresca il waste_percentage per ogni componente snapshot.
           let newFinishCost = 0;
           let newFinishLaborMin: number | null = null;
+          let refreshedFinishComponents: Array<Record<string, unknown>> | null = null;
           const { data: currentRow } = await supabase
             .from('estimate_stratigraphies')
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -240,12 +244,12 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
             const matIds = finishSnap
               .map((c: Record<string, unknown>) => c.material_id as string | undefined)
               .filter((x): x is string => !!x);
-            const priceMap = new Map<string, { unit_price?: number; unit?: string; box_pieces?: number }>();
+            const priceMap = new Map<string, { unit_price?: number; unit?: string; box_pieces?: number; waste_percentage?: number | null }>();
             if (matIds.length > 0) {
               const { data: freshMats } = await supabase
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 .from('materials_with_pricing' as any)
-                .select('id, unit_price, unit, box_pieces')
+                .select('id, unit_price, unit, box_pieces, waste_percentage')
                 .in('id', matIds);
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               for (const m of (freshMats ?? []) as any[]) {
@@ -253,6 +257,7 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
               }
             }
             let materialsCost = 0;
+            refreshedFinishComponents = [];
             for (const c of finishSnap as Array<Record<string, unknown>>) {
               const fresh = priceMap.get(c.material_id as string);
               const unitPrice = Number(fresh?.unit_price ?? c.unit_price ?? 0);
@@ -260,6 +265,13 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
               const box = Number(fresh?.box_pieces ?? c.box_pieces ?? 0);
               const pricePerUsage = (unit === 'scatola' && box > 0) ? unitPrice / box : unitPrice;
               materialsCost += Number(c.quantity_per_sqm ?? 0) * pricePerUsage;
+              refreshedFinishComponents.push({
+                ...c,
+                unit_price: unitPrice,
+                material_unit: unit || c.material_unit,
+                box_pieces: box > 0 ? box : (c.box_pieces ?? null),
+                waste_percentage: fresh?.waste_percentage ?? null,
+              });
             }
             const laborCost = ((newFinishLaborMin ?? 0) * costPerHour) / 60;
             newFinishCost = Math.round((materialsCost + laborCost) * 10000) / 10000;
@@ -291,6 +303,7 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
               stratigraphy_data: updatedStratigraphyData,
               layers_data: sortedLayers,
               finish_cost_per_sqm: newFinishCost > 0 ? newFinishCost : null,
+              ...(refreshedFinishComponents ? { finish_components_data: refreshedFinishComponents } : {}),
               prices_updated_at: new Date().toISOString(),
             } as any)
             .eq('id', estStrat.id);

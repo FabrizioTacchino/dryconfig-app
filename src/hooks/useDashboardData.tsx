@@ -4,6 +4,7 @@ import { useProjects } from '@/hooks/useProjects';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useWasteFactors } from '@/hooks/useWasteFactors';
 
 export interface DashboardMetrics {
   // Project metrics
@@ -62,6 +63,7 @@ export interface DashboardMetrics {
 }
 
 export const useDashboardData = () => {
+  const { wasteMap } = useWasteFactors();
   const { user } = useAuth();
   const { projects, isLoading: projectsLoading } = useProjects();
 
@@ -173,8 +175,13 @@ export const useDashboardData = () => {
                 items: current.items + 1
               });
               
-              // Waste and disposal percentages
-              totalWastePercentage += material.waste_percentage || 10;
+              // Waste and disposal percentages.
+              // Sfrido: override sul materiale (se NOT NULL) > Settings → Sfridi per categoria.
+              const wasteOverride = material.waste_percentage;
+              const resolvedWaste = (wasteOverride !== null && wasteOverride !== undefined)
+                ? Number(wasteOverride)
+                : (wasteMap[material.category ?? ''] ?? 0);
+              totalWastePercentage += resolvedWaste;
               totalDisposalPercentage += material.disposal_percentage || 4;
               totalInstallationTime += material.installation_time_per_sqm || 0;
             }

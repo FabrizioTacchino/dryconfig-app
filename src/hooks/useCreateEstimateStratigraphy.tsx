@@ -47,7 +47,7 @@ async function fetchFinishCostSnapshot(
       quantity_per_sqm,
       notes,
       material:materials!finish_level_components_material_id_fkey (
-        id, name, code, unit, unit_price, supplier, category, box_pieces
+        id, name, code, unit, unit_price, supplier, category, box_pieces, waste_percentage
       )
     `)
     .eq('finish_level_id', level.id);
@@ -76,6 +76,7 @@ async function fetchFinishCostSnapshot(
       box_pieces: mat.box_pieces,
       quantity_per_sqm: qty,
       cost_per_sqm: Math.round(rowCost * 10000) / 10000,
+      waste_percentage: mat.waste_percentage ?? null,
       notes: c.notes,
     });
   }
@@ -163,7 +164,8 @@ export const useCreateEstimateStratigraphy = () => {
               compatible_board_types,
               length,
               box_pieces,
-              installation_time_per_sqm
+              installation_time_per_sqm,
+              waste_percentage
             ),
             screw_materials:materials!layers_screw_material_id_fkey (
               id,
@@ -178,7 +180,8 @@ export const useCreateEstimateStratigraphy = () => {
               description,
               length,
               box_pieces,
-              installation_time_per_sqm
+              installation_time_per_sqm,
+              waste_percentage
             )
           )
         `)

@@ -86,7 +86,7 @@ const EditMaterialDialog = ({ open, onOpenChange, onSuccess, material }: EditMat
     thermal_capacity: '',
     box_pieces: '',
     compatible_board_types: '',
-    waste_percentage: '10',
+    waste_percentage: '',
     disposal_percentage: '4',
   });
   
@@ -162,7 +162,7 @@ const EditMaterialDialog = ({ open, onOpenChange, onSuccess, material }: EditMat
           Array.isArray(material.compatible_board_types)
             ? material.compatible_board_types.join(', ')
             : (material.compatible_board_types || ''),
-        waste_percentage: material.waste_percentage?.toString() || '10',
+        waste_percentage: material.waste_percentage != null ? material.waste_percentage.toString() : '',
         disposal_percentage: material.disposal_percentage?.toString() || '4',
       });
     }
