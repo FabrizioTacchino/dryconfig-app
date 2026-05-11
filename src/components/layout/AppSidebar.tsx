@@ -45,10 +45,6 @@ const AppSidebar = () => {
     name: 'Membri',
     href: '/settings/members',
     icon: Users
-  }] : []), ...(isAdmin || isSuperUser ? [{
-    name: 'Amministrazione',
-    href: '/admin',
-    icon: Shield
   }] : [])];
   
   return (

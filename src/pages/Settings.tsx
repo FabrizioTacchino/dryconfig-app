@@ -19,6 +19,7 @@ import BackButton from '@/components/layout/BackButton';
 import WasteFactorsCard from '@/components/settings/WasteFactorsCard';
 import FinishLevelsCard from '@/components/settings/FinishLevelsCard';
 import ScrewPreferencesCard from '@/components/settings/ScrewPreferencesCard';
+import LaborCostCard from '@/components/settings/LaborCostCard';
 
 const Settings = () => {
   const { user } = useAuth();
@@ -174,6 +175,8 @@ const Settings = () => {
                   </div>
                 </CardContent>
               </Card>
+
+              <LaborCostCard />
 
               <WasteFactorsCard />
 
