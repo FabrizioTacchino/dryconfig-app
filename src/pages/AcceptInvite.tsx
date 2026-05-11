@@ -8,11 +8,11 @@ import { useInvitationPreview, useAcceptInvitation } from '@/hooks/useTeamManage
 import { toast } from 'sonner';
 
 const ROLE_LABEL: Record<string, string> = {
-  owner: 'Proprietario',
+  owner: 'Titolare',
   admin: 'Amministratore',
-  manager: 'Manager',
+  supervisor: 'Supervisore',
   technician: 'Tecnico',
-  viewer: 'Lettura',
+  viewer: 'Visualizzatore',
 };
 
 const AcceptInvite: React.FC = () => {

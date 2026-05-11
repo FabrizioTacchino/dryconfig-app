@@ -22,11 +22,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import BackButton from '@/components/layout/BackButton';
 
 const ROLE_OPTIONS: { value: OrganizationRole; label: string; description: string }[] = [
-  { value: 'owner',      label: 'Proprietario', description: 'Pieni poteri, gestione billing' },
-  { value: 'admin',      label: 'Amministratore', description: 'Gestione team e impostazioni org' },
-  { value: 'manager',    label: 'Manager', description: 'Vede tutti i preventivi del team (sola lettura)' },
-  { value: 'technician', label: 'Tecnico', description: 'Crea e modifica preventivi e stratigrafie' },
-  { value: 'viewer',     label: 'Lettura', description: 'Sola lettura' },
+  { value: 'owner',      label: 'Titolare',       description: 'Pieni poteri, gestione billing ed eliminazione organizzazione' },
+  { value: 'admin',      label: 'Amministratore', description: 'Gestione team, fornitori, sconti, impostazioni org' },
+  { value: 'supervisor', label: 'Supervisore',    description: 'Approva eliminazione progetti/preventivi, gestisce flussi del team' },
+  { value: 'technician', label: 'Tecnico',        description: 'Crea e modifica progetti, preventivi e stratigrafie (no eliminazione)' },
+  { value: 'viewer',     label: 'Visualizzatore', description: 'Sola lettura su tutto' },
 ];
 
 const Members: React.FC = () => {

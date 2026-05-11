@@ -1,6 +1,8 @@
 import React from 'react';
 import { useCurrentOrganization } from '@/contexts/OrganizationContext';
+import { useOrgPlan } from '@/hooks/useOrgPlan';
 import { Building2, ChevronsUpDown, Check } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,11 +13,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 const ROLE_LABEL: Record<string, string> = {
-  owner: 'Proprietario',
+  owner: 'Titolare',
   admin: 'Amministratore',
-  manager: 'Manager',
+  supervisor: 'Supervisore',
   technician: 'Tecnico',
-  viewer: 'Lettura',
+  viewer: 'Visualizzatore',
 };
 
 /**
@@ -35,6 +37,7 @@ export const OrgBadge: React.FC = () => {
     switchOrganization,
     loading,
   } = useCurrentOrganization();
+  const plan = useOrgPlan();
 
   if (loading || !currentOrganization) return null;
 
@@ -45,6 +48,9 @@ export const OrgBadge: React.FC = () => {
       <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-1 text-xs">
         <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="font-medium">{currentOrganization.name}</span>
+        <Badge variant={plan.variant} className="text-[10px] px-1.5 py-0 font-semibold">
+          {plan.label}
+        </Badge>
         {currentRole && (
           <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
             {ROLE_LABEL[currentRole] ?? currentRole}
@@ -63,6 +69,9 @@ export const OrgBadge: React.FC = () => {
         >
           <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="font-medium truncate max-w-[180px]">{currentOrganization.name}</span>
+          <Badge variant={plan.variant} className="text-[10px] px-1.5 py-0 font-semibold">
+            {plan.label}
+          </Badge>
           {currentRole && (
             <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
               {ROLE_LABEL[currentRole] ?? currentRole}

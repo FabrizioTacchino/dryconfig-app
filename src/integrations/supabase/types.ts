@@ -1766,7 +1766,7 @@ export type Database = {
         | "accessory"
         | "other"
         | "screw"
-      organization_role: "owner" | "admin" | "manager" | "technician" | "viewer"
+      organization_role: "owner" | "admin" | "supervisor" | "technician" | "viewer"
       project_status: "active" | "completed" | "archived"
       user_role:
         | "user"
@@ -1912,7 +1912,7 @@ export const Constants = {
         "other",
         "screw",
       ],
-      organization_role: ["owner", "admin", "manager", "technician", "viewer"],
+      organization_role: ["owner", "admin", "supervisor", "technician", "viewer"],
       project_status: ["active", "completed", "archived"],
       user_role: [
         "user",
