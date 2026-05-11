@@ -254,17 +254,35 @@ export function useConfiguratorState({
   const { suggestions: screwSuggestions } = useScrewSuggestions(layers, typology);
 
   // Auto-apply: per ogni layer board con `screwIsAutoSuggested !== false`
-  // applico la suggestion. Rispetta override manuale (flag = false).
+  // applico la suggestion. Rispetta override manuale (flag = false), MA
+  // funziona come safety-net se la vite scelta è:
+  //   - assente (es. materiale eliminato dal catalogo → FK SET NULL)
+  //   - palesemente insufficiente (length < requiredLengthMm) per la
+  //     composizione corrente (es. utente ha aggiunto una 2ª lastra dopo
+  //     che la stratigrafia era stata salvata con vite più corta)
+  // Il flag override resta `false` dopo l'auto-correzione "safety": resta
+  // un override per le future modifiche, solo ora con valore consistente.
   useEffect(() => {
     if (screwSuggestions.size === 0) return;
     let changed = false;
     setLayers(prev => {
       const next = prev.map(l => {
         if (l.material?.category !== 'board') return l;
-        // Override manuale: non toccare
-        if (l.screwIsAutoSuggested === false) return l;
         const sug = screwSuggestions.get(l.id);
         if (!sug || !sug.recommended) return l;
+
+        // Override manuale: applica solo se la vite corrente è inadeguata
+        // (assente o troppo corta), altrimenti rispetta la scelta utente.
+        if (l.screwIsAutoSuggested === false) {
+          const currentLengthMm = Number(
+            l.screwMaterial?.length ?? l.screwMaterial?.thickness ?? 0,
+          );
+          const requiredMm = sug.requiredLengthMm ?? 0;
+          const isMissing = !l.screwMaterialId;
+          const isTooShort = currentLengthMm > 0 && currentLengthMm + 0.001 < requiredMm;
+          if (!isMissing && !isTooShort) return l; // override valido, non toccare
+        }
+
         const newScrewId = sug.recommended.id;
         const newQty = Math.round(sug.screwsPerSqm);
         const newCost = computeScrewCostPerSqm(sug.recommended, newQty);
