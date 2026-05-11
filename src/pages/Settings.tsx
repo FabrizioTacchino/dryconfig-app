@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useTheme } from 'next-themes';
 import { Settings as SettingsIcon, Bell, Shield, Palette } from 'lucide-react';
 import { createNotification } from '@/utils/notificationUtils';
 import BackButton from '@/components/layout/BackButton';
@@ -21,11 +22,11 @@ import ScrewPreferencesCard from '@/components/settings/ScrewPreferencesCard';
 
 const Settings = () => {
   const { user } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState({
     emailNotifications: true,
     pushNotifications: false,
     marketingEmails: false,
-    darkMode: false
   });
   const [loading, setLoading] = useState(false);
 
@@ -167,8 +168,8 @@ const Settings = () => {
                     </div>
                     <Switch
                       id="dark-mode"
-                      checked={settings.darkMode}
-                      onCheckedChange={(checked) => handleSettingChange('darkMode', checked)}
+                      checked={theme === 'dark'}
+                      onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
                     />
                   </div>
                 </CardContent>
