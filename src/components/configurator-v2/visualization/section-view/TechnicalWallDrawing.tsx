@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import SVGPatternsDefs from './SVGPatternsDefs';
-import { buildWallSectionModel, generateWallTitle, type WallBlock, type BoardBlock, type StructureBlock } from './wallModel';
+import { buildWallSectionModel, generateWallTitle, type WallBlock, type BoardBlock, type StructureBlock, type OrphanInsulationBlock } from './wallModel';
 import { typologyLabel, useTypologyDetection } from '../../hooks/useTypologyDetection';
 import type { LayerV2 } from '../../types';
 
@@ -82,17 +82,27 @@ const TechnicalWallDrawing: React.FC<TechnicalWallDrawingProps> = ({
   const wallStartY = DRAW_Y + (DRAW_H - wallHeightPx) * 0.5;
   const wallEndY = wallStartY + wallHeightPx;
 
-  // Calcolo posizione X cumulata di ogni blocco
-  type DrawBlock = { block: WallBlock; x: number; w: number; calloutNum: number };
+  // Calcolo posizione X cumulata di ogni blocco + ordinale per le strutture
+  // (per badge "Orditura 1 / 2" in caso di doppia orditura).
+  type DrawBlock = {
+    block: WallBlock;
+    x: number;
+    w: number;
+    calloutNum: number;
+    structureOrdinal: number; // 0 se non struttura, altrimenti 1, 2, ...
+  };
   const drawBlocks: DrawBlock[] = [];
   let cursorX = wallStartX;
   let calloutCounter = 1;
+  let structSeen = 0;
   for (const b of model.blocks) {
     const w = (b.kind === 'board' ? b.thicknessMm : b.depthMm) * scaleX;
-    drawBlocks.push({ block: b, x: cursorX, w, calloutNum: calloutCounter });
+    const structureOrdinal = b.kind === 'structure' ? ++structSeen : 0;
+    drawBlocks.push({ block: b, x: cursorX, w, calloutNum: calloutCounter, structureOrdinal });
     calloutCounter += 1;
     cursorX += w;
   }
+  const totalStructures = structSeen;
 
   // Numero di montanti visibili nella vista frontale (almeno 3 per dare senso)
   const studsCount = Math.max(3, Math.ceil(2400 / studSpacingMm));
@@ -103,10 +113,10 @@ const TechnicalWallDrawing: React.FC<TechnicalWallDrawingProps> = ({
   const slabBottom = wallEndY;
 
   return (
-    <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+    <div className="bg-white border rounded-lg overflow-hidden shadow-sm" data-section-view="true">
       <svg
         viewBox={`0 0 ${VB_W} ${VB_H}`}
-        className="w-full h-auto"
+        className="w-full h-auto technical-wall-svg"
         xmlns="http://www.w3.org/2000/svg"
       >
         <SVGPatternsDefs />
@@ -198,9 +208,37 @@ const TechnicalWallDrawing: React.FC<TechnicalWallDrawingProps> = ({
 
         {/* === DISEGNO PARETE (sezione verticale) === */}
         <g filter="url(#soft-shadow)">
-          {drawBlocks.map(({ block, x, w }, idx) =>
-            block.kind === 'board' ? (
-              <BoardRect
+          {drawBlocks.map(({ block, x, w, structureOrdinal }, idx) => {
+            if (block.kind === 'board') {
+              return (
+                <BoardRect
+                  key={idx}
+                  block={block}
+                  x={x}
+                  y={wallStartY}
+                  w={w}
+                  h={wallHeightPx}
+                />
+              );
+            }
+            if (block.kind === 'structure') {
+              return (
+                <StructureGroup
+                  key={idx}
+                  block={block}
+                  x={x}
+                  y={wallStartY}
+                  w={w}
+                  h={wallHeightPx}
+                  studsCount={studsCount}
+                  structureOrdinal={structureOrdinal}
+                  showOrdinal={totalStructures > 1}
+                />
+              );
+            }
+            // orphan_insulation: render con bordo tratteggiato rosso (warning)
+            return (
+              <OrphanInsulationRect
                 key={idx}
                 block={block}
                 x={x}
@@ -208,18 +246,8 @@ const TechnicalWallDrawing: React.FC<TechnicalWallDrawingProps> = ({
                 w={w}
                 h={wallHeightPx}
               />
-            ) : (
-              <StructureGroup
-                key={idx}
-                block={block}
-                x={x}
-                y={wallStartY}
-                w={w}
-                h={wallHeightPx}
-                studsCount={studsCount}
-              />
-            ),
-          )}
+            );
+          })}
         </g>
 
         {/* === QUOTE SOPRA AL DISEGNO === */}
@@ -307,7 +335,7 @@ const TechnicalWallDrawing: React.FC<TechnicalWallDrawingProps> = ({
 // SUB-COMPONENTI
 // ============================================================================
 
-const BoardRect: React.FC<{
+export const BoardRect: React.FC<{
   block: BoardBlock;
   x: number; y: number; w: number; h: number;
 }> = ({ block, x, y, w, h }) => {
@@ -348,11 +376,13 @@ const BoardRect: React.FC<{
  * Disegniamo la sezione VERTICALE: vediamo i montanti come rettangoli metallici
  * verticali distanziati, l'isolante come pattern lana che riempie i vani.
  */
-const StructureGroup: React.FC<{
+export const StructureGroup: React.FC<{
   block: StructureBlock;
   x: number; y: number; w: number; h: number;
   studsCount: number;
-}> = ({ block, x, y, w, h, studsCount }) => {
+  structureOrdinal?: number;
+  showOrdinal?: boolean;
+}> = ({ block, x, y, w, h, studsCount, structureOrdinal, showOrdinal }) => {
   // Sfondo isolante (riempie tutto)
   const insulationFill = block.insulationFillId ? `url(#${block.insulationFillId})` : '#F4F4F5';
 
@@ -373,6 +403,10 @@ const StructureGroup: React.FC<{
   // la sezione verticale taglia la parete, non guarda la sua lunghezza. Ma per dare un
   // visivo identificabile mostriamo i montanti come 2-3 evidenziatori stilizzati.
 
+  // Stroke più marcata se è una doppia orditura (per leggere a colpo d'occhio i 2 telai)
+  const outerStroke = showOrdinal ? 1.0 : 0.6;
+  const outerStrokeColor = showOrdinal ? '#0F172A' : '#1F2937';
+
   return (
     <g>
       {/* Sfondo: isolante o vuoto */}
@@ -382,9 +416,36 @@ const StructureGroup: React.FC<{
         width={w}
         height={h}
         fill={insulationFill}
-        stroke="#1F2937"
-        strokeWidth={0.6}
+        stroke={outerStrokeColor}
+        strokeWidth={outerStroke}
       />
+
+      {/* Badge "Orditura N" (solo in caso di doppia orditura) */}
+      {showOrdinal && structureOrdinal && structureOrdinal > 0 && w > 24 && (
+        <g>
+          <rect
+            x={x + 4}
+            y={y + 4}
+            width={Math.min(w - 8, 64)}
+            height={16}
+            rx={3}
+            fill="#0F172A"
+            opacity={0.85}
+          />
+          <text
+            x={x + 4 + Math.min(w - 8, 64) / 2}
+            y={y + 15}
+            fontSize={9}
+            fill="#FFFFFF"
+            fontFamily="Inter, system-ui, sans-serif"
+            textAnchor="middle"
+            fontWeight={700}
+            letterSpacing="0.04em"
+          >
+            ORDITURA {structureOrdinal}
+          </text>
+        </g>
+      )}
 
       {/* Profilo C anima del montante (disegnato come "U" rotata verticale) */}
       <g>
@@ -418,6 +479,65 @@ const StructureGroup: React.FC<{
           fontWeight={600}
         >
           {block.studLabel?.slice(0, 24) ?? 'Struttura'}
+        </text>
+      )}
+    </g>
+  );
+};
+
+/**
+ * Isolante orfano: pattern lana + bordo tratteggiato rosso + icona warning.
+ * Comunica visivamente "questo è fuori posto, l'isolante va dentro la struttura".
+ */
+export const OrphanInsulationRect: React.FC<{
+  block: OrphanInsulationBlock;
+  x: number; y: number; w: number; h: number;
+}> = ({ block, x, y, w, h }) => {
+  const fill = `url(#${block.fillId})`;
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        fill={fill}
+        stroke="#DC2626"
+        strokeWidth={1.2}
+        strokeDasharray="6 4"
+      />
+      {/* Banda warning in alto */}
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={20}
+        fill="#FEE2E2"
+        opacity={0.85}
+      />
+      <text
+        x={x + w / 2}
+        y={y + 13}
+        fontSize={9}
+        fill="#991B1B"
+        fontFamily="Inter, system-ui, sans-serif"
+        textAnchor="middle"
+        fontWeight={700}
+      >
+        ⚠ FUORI VANO
+      </text>
+      {w > 25 && (
+        <text
+          x={x + w / 2}
+          y={y + h / 2}
+          fontSize={9}
+          fill="#7F1D1D"
+          fontFamily="Inter, system-ui, sans-serif"
+          textAnchor="middle"
+          transform={`rotate(-90, ${x + w / 2}, ${y + h / 2})`}
+          opacity={0.85}
+        >
+          {block.label.slice(0, 18)}
         </text>
       )}
     </g>
@@ -506,17 +626,26 @@ const RightSidebar: React.FC<{
         num: calloutNum,
         title: block.label,
         sub: `${thick} mm · ${supplier}`,
+        warning: false,
       };
-    } else {
-      // structure
+    }
+    if (block.kind === 'structure') {
       const studName = block.studLabel ?? 'Struttura';
       const insulName = block.insulationLabel;
       return {
         num: calloutNum,
         title: studName,
         sub: insulName ? `${block.depthMm} mm · isolante: ${insulName}` : `${block.depthMm} mm`,
+        warning: false,
       };
     }
+    // orphan_insulation
+    return {
+      num: calloutNum,
+      title: `⚠ ${block.label}`,
+      sub: `${block.depthMm} mm · isolante FUORI vano — sposta dentro la struttura`,
+      warning: true,
+    };
   });
 
   return (
@@ -539,14 +668,17 @@ const RightSidebar: React.FC<{
       </text>
       {legendItems.map((item, i) => {
         const ly = y + 38 + i * (lineH + 6);
+        const stroke = item.warning ? '#DC2626' : '#0F766E';
+        const titleFill = item.warning ? '#991B1B' : '#0F172A';
+        const subFill = item.warning ? '#B91C1C' : '#64748B';
         return (
           <g key={item.num}>
-            <circle cx={x + PAD + 9} cy={ly + 2} r={9} fill="#FFFFFF" stroke="#0F766E" strokeWidth={1} />
+            <circle cx={x + PAD + 9} cy={ly + 2} r={9} fill="#FFFFFF" stroke={stroke} strokeWidth={1} />
             <text
               x={x + PAD + 9}
               y={ly + 5}
               fontSize={10}
-              fill="#0F766E"
+              fill={stroke}
               fontFamily="Inter, system-ui, sans-serif"
               textAnchor="middle"
               fontWeight={700}
@@ -557,7 +689,7 @@ const RightSidebar: React.FC<{
               x={x + PAD + 24}
               y={ly + 1}
               fontSize={11}
-              fill="#0F172A"
+              fill={titleFill}
               fontFamily="Inter, system-ui, sans-serif"
               fontWeight={600}
             >
@@ -567,7 +699,7 @@ const RightSidebar: React.FC<{
               x={x + PAD + 24}
               y={ly + 13}
               fontSize={9}
-              fill="#64748B"
+              fill={subFill}
               fontFamily="Inter, system-ui, sans-serif"
             >
               {item.sub}

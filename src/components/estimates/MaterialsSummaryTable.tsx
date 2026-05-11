@@ -265,10 +265,30 @@ const MaterialsSummaryTable = ({
                   <div className="font-medium">
                     {material.totalQuantity.toFixed(2)} {material.unit}
                   </div>
+                  {/* Per le viti: pezzi usati + scatole + sfrido */}
+                  {material.piecesUsed !== undefined && material.boxPieces && (
+                    <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                      {Math.round(material.piecesUsed)} pz utilizzati
+                      {material.wastePercentage && material.wastePercentage > 0
+                        ? ` · +${material.wastePercentage}% sfrido`
+                        : ''}
+                      {` · ${material.boxPieces} pz/scatola`}
+                    </div>
+                  )}
+                  {/* Altri materiali: quantità teorica + sfrido (se > 0) */}
+                  {material.piecesUsed === undefined
+                    && material.wastePercentage !== undefined
+                    && material.wastePercentage > 0
+                    && material.theoreticalQuantity !== undefined && (
+                    <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                      {material.theoreticalQuantity.toFixed(2)} {material.unit} teorici
+                      {` · +${material.wastePercentage}% sfrido`}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell className="text-right">
                   <span className="text-sm">
-                    €{material.unitPrice.toFixed(2)}/{material.unit}
+                    €{material.unitPrice.toFixed(material.unitPrice < 0.1 ? 4 : 2)}/{material.unit}
                   </span>
                 </TableCell>
                 <TableCell className="text-right">

@@ -15,6 +15,8 @@ interface EstimateStratigraphyActionsProps {
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onDelete: () => void;
+  /** Se la row è orfana (originale eliminata) chiama questo invece di navigare al configuratore. */
+  onViewSnapshot?: () => void;
 }
 
 const EstimateStratigraphyActions = ({
@@ -27,15 +29,33 @@ const EstimateStratigraphyActions = ({
   onSaveEdit,
   onCancelEdit,
   onDelete,
+  onViewSnapshot,
 }: EstimateStratigraphyActionsProps) => {
   const navigate = useNavigate();
+  // Row orfana: snapshot conservato ma originale del catalogo eliminata.
+  // Il configuratore non può aprirla (non ha id valido in `stratigraphies`),
+  // quindi mostriamo un viewer dedicato che legge dallo snapshot.
+  const isOrphan = !!item.isSnapshot && !item.originalStratigraphyId;
 
   const handleViewStratigraphy = () => {
+    if (isOrphan) {
+      onViewSnapshot?.();
+      return;
+    }
+    // Catalogo presente: apri configuratore in view mode con l'id catalogo.
+    // `stratigraphyId` è il param V1; preferisco il riferimento più sicuro
+    // disponibile nell'ordine: stratigraphyId (FK attuale) → originalStratigraphyId.
+    const targetId = item.stratigraphyId || item.originalStratigraphyId;
+    if (!targetId) {
+      // Edge case: not orphan ma nessun id — fallback al viewer snapshot.
+      onViewSnapshot?.();
+      return;
+    }
     const searchParams = new URLSearchParams({
       estimate: item.estimateId,
       tab: 'builder',
-      stratigraphyId: item.stratigraphyId || item.id,
-      viewOnly: 'true'
+      stratigraphyId: targetId,
+      viewOnly: 'true',
     });
     navigate(`/configurator?${searchParams.toString()}`);
   };

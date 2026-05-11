@@ -24,6 +24,13 @@ export interface LayerV2 {
   screwMaterial?: DatabaseMaterial | null;
   screwQuantity?: number;
   screwCostPerSqm?: number;
+  /**
+   * `true` (o undefined): la vite è gestita dall'auto-suggest e viene rigenerata
+   * quando cambia la composizione (numero lastre, materiale, ecc.).
+   * `false`: l'utente ha fatto override manuale → l'auto-suggest NON sovrascrive.
+   * Si rimette `true` cliccando "Riapplica suggerimento".
+   */
+  screwIsAutoSuggested?: boolean;
 }
 
 /**

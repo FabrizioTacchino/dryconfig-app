@@ -18,6 +18,12 @@ export interface EstimateStratigraphy {
   isSnapshot?: boolean;
   originalStratigraphyId?: string;
   wallHeight?: number; // Added wallHeight property
+  // F7.7: snapshot finitura
+  finishLevel?: string | null;
+  finishCostPerSqm?: number | null;
+  finishLaborMinutesPerSqm?: number | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  finishComponentsData?: any[] | null;
 }
 
 export interface CreateEstimateStratigraphyData {

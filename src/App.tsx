@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
@@ -12,7 +13,6 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
-import Configurator from "./pages/Configurator";
 import ConfiguratorV2 from "./pages/ConfiguratorV2";
 import Materials from "./pages/Materials";
 import Admin from "./pages/Admin";
@@ -65,12 +65,9 @@ const App = () => {
                     <EstimateManagement />
                   </ProtectedRoute>
                 } />
+                {/* V2 è il configuratore unico su /configurator.
+                    V1 (componente <Configurator/>) è dismesso e non più routato. */}
                 <Route path="/configurator" element={
-                  <ProtectedRoute>
-                    <Configurator />
-                  </ProtectedRoute>
-                } />
-                <Route path="/configurator-v2" element={
                   <ProtectedRoute>
                     <ConfiguratorV2 />
                   </ProtectedRoute>
@@ -115,6 +112,12 @@ const App = () => {
               </Routes>
             </div>
             <Toaster />
+            <SonnerToaster
+              position="top-right"
+              richColors
+              closeButton
+              duration={3500}
+            />
           </TooltipProvider>
         </BrowserRouter>
         </OrganizationProvider>

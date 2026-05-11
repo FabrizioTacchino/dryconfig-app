@@ -65,7 +65,9 @@ export const useEstimateStratigraphiesQuery = (estimateId?: string) => {
                 acoustic_performance,
                 fire_resistance_class,
                 compatible_board_types,
-                length
+                length,
+                box_pieces,
+                installation_time_per_sqm
               ),
               screw_materials:materials!layers_screw_material_id_fkey (
                 id,
@@ -75,7 +77,10 @@ export const useEstimateStratigraphiesQuery = (estimateId?: string) => {
                 unit,
                 unit_price,
                 supplier,
-                incidence_per_sqm
+                incidence_per_sqm,
+                length,
+                box_pieces,
+                installation_time_per_sqm
               )
             )
           )
@@ -143,6 +148,10 @@ export const useEstimateStratigraphiesQuery = (estimateId?: string) => {
             pricesUpdatedAt: item.prices_updated_at ? new Date(item.prices_updated_at) : undefined,
             isSnapshot: true,
             originalStratigraphyId: item.original_stratigraphy_id,
+            finishLevel: (item as any).finish_level ?? null,
+            finishCostPerSqm: (item as any).finish_cost_per_sqm != null ? Number((item as any).finish_cost_per_sqm) : null,
+            finishLaborMinutesPerSqm: (item as any).finish_labor_minutes_per_sqm != null ? Number((item as any).finish_labor_minutes_per_sqm) : null,
+            finishComponentsData: Array.isArray((item as any).finish_components_data) ? (item as any).finish_components_data : null,
             stratigraphy,
           };
         }
@@ -165,6 +174,10 @@ export const useEstimateStratigraphiesQuery = (estimateId?: string) => {
             pricesUpdatedAt: item.prices_updated_at ? new Date(item.prices_updated_at) : undefined,
             isSnapshot: item.is_snapshot || false,
             originalStratigraphyId: item.original_stratigraphy_id,
+            finishLevel: (item as any).finish_level ?? null,
+            finishCostPerSqm: (item as any).finish_cost_per_sqm != null ? Number((item as any).finish_cost_per_sqm) : null,
+            finishLaborMinutesPerSqm: (item as any).finish_labor_minutes_per_sqm != null ? Number((item as any).finish_labor_minutes_per_sqm) : null,
+            finishComponentsData: Array.isArray((item as any).finish_components_data) ? (item as any).finish_components_data : null,
             stratigraphy: {
               ...item.stratigraphies,
               layers: item.stratigraphies.layers?.sort((a: any, b: any) => a.position - b.position) || [],
@@ -190,6 +203,10 @@ export const useEstimateStratigraphiesQuery = (estimateId?: string) => {
           pricesUpdatedAt: item.prices_updated_at ? new Date(item.prices_updated_at) : undefined,
           isSnapshot: item.is_snapshot || false,
           originalStratigraphyId: item.original_stratigraphy_id,
+          finishLevel: (item as any).finish_level ?? null,
+          finishCostPerSqm: (item as any).finish_cost_per_sqm != null ? Number((item as any).finish_cost_per_sqm) : null,
+          finishLaborMinutesPerSqm: (item as any).finish_labor_minutes_per_sqm != null ? Number((item as any).finish_labor_minutes_per_sqm) : null,
+          finishComponentsData: Array.isArray((item as any).finish_components_data) ? (item as any).finish_components_data : null,
           stratigraphy: null,
         };
       }) as (EstimateStratigraphy & { stratigraphy: any, quantity: number })[];

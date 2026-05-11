@@ -5,14 +5,26 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { GripVertical, Trash2, AlertCircle, Square, RectangleVertical, RectangleHorizontal, Layers, Wrench, Package, Brush } from 'lucide-react';
+import { GripVertical, Trash2, Copy, AlertCircle, Square, RectangleVertical, RectangleHorizontal, Layers, Wrench, Package, Brush } from 'lucide-react';
 import type { LayerV2 } from '../types';
+import type { DatabaseMaterial } from '@/hooks/useMaterials';
+import type { ScrewSuggestion } from '../hooks/screwRecommendation';
+import LayerScrewSelectorV2 from './LayerScrewSelectorV2';
 
 interface LayerCardProps {
   layer: LayerV2;
+  /** Suggestion vite per questo layer (presente solo se category=board). */
+  screwSuggestion?: ScrewSuggestion;
   onUpdate: (patch: Partial<LayerV2>) => void;
   onRemove: () => void;
+  onDuplicate: () => void;
   onClickMaterial: () => void;
+  /** Override manuale vite — disattiva auto-suggest. */
+  onChangeScrew?: (screw: DatabaseMaterial | null) => void;
+  /** Override manuale quantità viti/m². */
+  onChangeScrewQty?: (qty: number) => void;
+  /** Riattiva l'auto-suggest e applica la vite raccomandata. */
+  onReapplyScrewSuggestion?: () => void;
 }
 
 /**
@@ -20,7 +32,17 @@ interface LayerCardProps {
  *
  * Vedi `docs/mockupui.md` §7 per anatomia card.
  */
-const LayerCard: React.FC<LayerCardProps> = ({ layer, onUpdate, onRemove, onClickMaterial }) => {
+const LayerCard: React.FC<LayerCardProps> = ({
+  layer,
+  screwSuggestion,
+  onUpdate,
+  onRemove,
+  onDuplicate,
+  onClickMaterial,
+  onChangeScrew,
+  onChangeScrewQty,
+  onReapplyScrewSuggestion,
+}) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: layer.id,
   });
@@ -111,16 +133,38 @@ const LayerCard: React.FC<LayerCardProps> = ({ layer, onUpdate, onRemove, onClic
               </div>
             )}
           </div>
+
+          {/* Selettore vite (solo per layer board con materiale assegnato) */}
+          {layer.material?.category === 'board' && layer.materialId && onChangeScrew && onChangeScrewQty && onReapplyScrewSuggestion && (
+            <LayerScrewSelectorV2
+              layer={layer}
+              suggestion={screwSuggestion}
+              onChangeScrew={onChangeScrew}
+              onChangeQuantity={onChangeScrewQty}
+              onReapplySuggestion={onReapplyScrewSuggestion}
+            />
+          )}
         </div>
 
-        {/* Delete */}
-        <button
-          onClick={onRemove}
-          className="px-2 text-zinc-400 hover:text-destructive focus:outline-none focus:ring-2 focus:ring-destructive rounded-r"
-          aria-label={`Elimina layer ${layer.position}`}
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+        {/* Action buttons (duplicate + delete) */}
+        <div className="flex flex-col items-stretch border-l border-zinc-100">
+          <button
+            onClick={onDuplicate}
+            className="px-2 py-1 text-zinc-400 hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary rounded-tr"
+            aria-label={`Duplica layer ${layer.position}`}
+            title="Duplica layer"
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={onRemove}
+            className="px-2 py-1 text-zinc-400 hover:text-destructive focus:outline-none focus:ring-2 focus:ring-destructive rounded-br"
+            aria-label={`Elimina layer ${layer.position}`}
+            title="Elimina layer"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </Card>
   );

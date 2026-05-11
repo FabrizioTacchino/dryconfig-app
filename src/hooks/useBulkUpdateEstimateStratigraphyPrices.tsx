@@ -1,92 +1,137 @@
-
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { EstimateStratigraphy } from '@/types/estimateStratigraphy';
+import { computeBaseCosts, dbLayerToCalcLayer } from '@/utils/cost/computeBaseCosts';
 
 interface BulkUpdateParams {
   estimateStratigraphies: EstimateStratigraphy[];
+  /**
+   * Se true, il toast riassuntivo dell'onSuccess viene saltato. Usato dai
+   * chiamanti single-row (es. useEstimateStratigraphies.updateStratigraphyPrices)
+   * che mostrano un toast più specifico col delta prezzo.
+   */
+  silentToast?: boolean;
 }
 
+export type BulkUpdateSkipReason =
+  /** Manca il riferimento alla stratigrafia originale (snapshot orfano da V1 o post-eliminazione). */
+  | 'no_original_stratigraphy'
+  /** La stratigrafia originale è stata eliminata dal catalogo. */
+  | 'original_not_found'
+  /** Composizione corrotta o vuota: ricalcolo darebbe 0, non sovrascrivo. */
+  | 'zero_cost_recalc'
+  /** Nessun layer valido trovato (tutti senza materiale o spessore 0). */
+  | 'no_valid_layers';
+
+export interface BulkUpdateRowOk {
+  id: string;
+  name: string;
+  oldCost: number;
+  newCost: number;
+  changed: boolean; // true se la differenza > 0.01€
+}
+
+export interface BulkUpdateRowSkipped {
+  id: string;
+  name: string;
+  reason: BulkUpdateSkipReason;
+  /** Per zero_cost_recalc: dettaglio sui layer invalidi/totali. */
+  detail?: string;
+}
+
+export interface BulkUpdateRowFailed {
+  id: string;
+  name: string;
+  error: string;
+}
+
+export interface BulkUpdateReport {
+  estimateId: string;
+  updated: BulkUpdateRowOk[];
+  skipped: BulkUpdateRowSkipped[];
+  failed: BulkUpdateRowFailed[];
+  costPerHour: number;
+}
+
+const SKIP_REASON_LABEL: Record<BulkUpdateSkipReason, string> = {
+  no_original_stratigraphy: 'Snapshot orfano (manca riferimento al catalogo)',
+  original_not_found: 'Stratigrafia originale eliminata dal catalogo',
+  zero_cost_recalc: 'Ricalcolo darebbe 0€ (composizione corrotta)',
+  no_valid_layers: 'Nessun layer valido nella stratigrafia',
+};
+
+export function bulkUpdateSkipReasonLabel(reason: BulkUpdateSkipReason): string {
+  return SKIP_REASON_LABEL[reason];
+}
+
+/**
+ * Aggiornamento bulk dei prezzi delle stratigrafie di un preventivo.
+ *
+ * Ricalcola dinamicamente costo materiali + viti + manodopera con il
+ * `cost_per_hour` corrente (da `configurator_settings`), poi aggiorna lo
+ * snapshot in `estimate_stratigraphies` (unit_cost, total_cost,
+ * stratigraphy_data, layers_data, prices_updated_at).
+ *
+ * Ritorna un report strutturato con esiti per riga: il chiamante può
+ * mostrare un dialog onesto invece della vecchia progress bar fake.
+ *
+ * Sicurezza: blocca se preventivo `contracted` o se l'utente non possiede
+ * il progetto.
+ */
 export const useBulkUpdateEstimateStratigraphyPrices = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const bulkUpdateMutation = useMutation({
-    mutationFn: async ({ estimateStratigraphies }: BulkUpdateParams) => {
+  const bulkUpdateMutation = useMutation<BulkUpdateReport, Error, BulkUpdateParams>({
+    mutationFn: async ({ estimateStratigraphies }) => {
       if (!user) throw new Error('User not authenticated');
-
       if (estimateStratigraphies.length === 0) {
         throw new Error('Nessuna stratigrafia da aggiornare');
       }
 
-      // PROTEZIONE: Verifica lo stato del preventivo prima di procedere
       const estimateId = estimateStratigraphies[0].estimateId;
-      
+
       const { data: estimateData, error: estimateError } = await supabase
         .from('estimates')
         .select('status, project_id')
         .eq('id', estimateId)
         .single();
-
-      if (estimateError) {
-        console.error('Error fetching estimate for validation:', estimateError);
-        throw new Error('Preventivo non trovato');
-      }
-
-      // Blocca se il preventivo è contrattualizzato
+      if (estimateError) throw new Error('Preventivo non trovato');
       if (estimateData.status === 'contracted') {
         throw new Error('Impossibile aggiornare prezzi: preventivo contrattualizzato');
       }
 
-      // Verifica che il progetto appartenga all'utente
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
         .select('id')
         .eq('id', estimateData.project_id)
         .eq('user_id', user.id)
         .single();
+      if (projectError || !projectData) throw new Error('Accesso negato al progetto');
 
-      if (projectError || !projectData) {
-        throw new Error('Accesso negato al progetto');
-      }
+      // Costo orario corrente: letto UNA volta sola per il batch, non per riga.
+      const { data: settingData, error: settingError } = await supabase
+        .from('configurator_settings')
+        .select('value')
+        .eq('key', 'cost_per_hour')
+        .maybeSingle();
+      if (settingError) throw new Error('Errore nel recupero del costo orario corrente');
+      const costPerHour = parseFloat(settingData?.value || '30') || 30;
 
-      const results = [];
+      const updated: BulkUpdateRowOk[] = [];
+      const skipped: BulkUpdateRowSkipped[] = [];
+      const failed: BulkUpdateRowFailed[] = [];
 
       for (const estStrat of estimateStratigraphies) {
-        console.log(`[BulkUpdate] Processing stratigraphy:`, {
-          id: estStrat.id,
-          name: estStrat.name,
-          originalStratigraphyId: estStrat.originalStratigraphyId,
-          isSnapshot: estStrat.isSnapshot
-        });
-        
         if (!estStrat.originalStratigraphyId) {
-          console.log(`Skipping ${estStrat.id} - no original stratigraphy ID`);
+          skipped.push({ id: estStrat.id, name: estStrat.name, reason: 'no_original_stratigraphy' });
           continue;
         }
 
         try {
-          console.log(`[BulkUpdate] 🔍 Fetching stratigraphy data for ${estStrat.name} (ID: ${estStrat.originalStratigraphyId})`);
-          
-          // 🔥 STEP 1: Fetch current hourly labor cost from settings
-          const { data: settingData, error: settingError } = await supabase
-            .from('configurator_settings')
-            .select('value')
-            .eq('key', 'cost_per_hour')
-            .single();
-
-          if (settingError) {
-            console.error(`[BulkUpdate] ❌ Error fetching current labor cost:`, settingError);
-            throw new Error('Errore nel recupero del costo orario corrente');
-          }
-
-          const currentLaborCostPerHour = parseFloat(settingData?.value || '30');
-          console.log(`[BulkUpdate] 💰 Current labor cost per hour: €${currentLaborCostPerHour}`);
-          
-          // 🔥 STEP 2: Fetch stratigraphy data with materials for dynamic calculation
-          const { data: updatedStratigraphy, error: stratigraphyError } = await supabase
+          const { data: original, error: stratigraphyError } = await supabase
             .from('stratigraphies')
             .select(`
               *,
@@ -125,177 +170,183 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
                   unit_price,
                   code,
                   supplier,
-                  unit
+                  unit,
+                  length,
+                  box_pieces,
+                  installation_time_per_sqm
                 )
               )
             `)
             .eq('id', estStrat.originalStratigraphyId)
-            .single();
+            .maybeSingle();
 
           if (stratigraphyError) {
-            console.error(`Error fetching stratigraphy ${estStrat.originalStratigraphyId}:`, stratigraphyError);
+            failed.push({ id: estStrat.id, name: estStrat.name, error: stratigraphyError.message });
+            continue;
+          }
+          if (!original) {
+            skipped.push({ id: estStrat.id, name: estStrat.name, reason: 'original_not_found' });
             continue;
           }
 
-          let newUnitCost = 0;
-          let materialCost = 0;
-          let screwCost = 0;
-          let laborCost = 0;
-          let totalInstallTime = 0;
-          
-          if (updatedStratigraphy.layers && updatedStratigraphy.layers.length > 0) {
-            // 🚀 DYNAMIC CALCULATION: Use current hourly labor cost instead of pre-calculated values
-            console.log(`🚀 [BulkUpdate] DYNAMIC CALCULATION with current labor cost €${currentLaborCostPerHour}/hour for ${estStrat.name}`);
-            
-            // Material costs (keep existing logic)
-            materialCost = updatedStratigraphy.layers.reduce((total: number, layer: any) => {
-              if (layer.materials && layer.thickness > 0) {
-                const unitPrice = layer.materials.unit_price || 0;
-                const incidence = layer.materials.incidence_per_sqm || 1;
-                return total + (unitPrice * incidence);
-              }
-              return total;
-            }, 0);
-            
-            // Screw costs (keep existing logic)
-            screwCost = updatedStratigraphy.layers.reduce((total: number, layer: any) => {
-              return total + (layer.screw_cost_per_sqm || 0);
-            }, 0);
-            
-            // 🔥 LABOR COST: Calculate dynamically with current hourly rate
-            updatedStratigraphy.layers.forEach((layer: any) => {
-              if (layer.materials && layer.thickness > 0) {
-                // Base installation time from material
-                const baseInstallTime = layer.materials.installation_time_per_sqm || 0;
-                
-                // Add screw installation time (0.03 minutes per screw)
-                const screwInstallTime = layer.screw_quantity > 0 ? layer.screw_quantity * 0.03 : 0;
-                
-                const layerTotalInstallTime = baseInstallTime + screwInstallTime;
-                totalInstallTime += layerTotalInstallTime;
-                
-                // Calculate labor cost with current hourly rate: (install_time_minutes * hourly_rate) / 60
-                const layerLaborCost = (layerTotalInstallTime * currentLaborCostPerHour) / 60;
-                laborCost += layerLaborCost;
-                
-                console.log(`[BulkUpdate] Layer ${layer.materials.name}: installTime=${layerTotalInstallTime}min, laborCost=${layerLaborCost.toFixed(3)}€`);
-              }
-            });
-            
-            // Total comprehensive cost with current labor rates
-            newUnitCost = Math.round((materialCost + screwCost + laborCost) * 100) / 100;
-            
-            console.log(`💰 [BulkUpdate] DYNAMIC COSTS for ${estStrat.name}:`, {
-              materialCost: Math.round(materialCost * 1000) / 1000,
-              screwCost: Math.round(screwCost * 1000) / 1000,
-              laborCost: Math.round(laborCost * 1000) / 1000,
-              totalInstallTime: Math.round(totalInstallTime * 1000) / 1000,
-              newUnitCost: newUnitCost,
-              layersCount: updatedStratigraphy.layers.length,
-              currentHourlyRate: currentLaborCostPerHour,
-              source: 'DYNAMIC_CALCULATION'
-            });
-          } else {
-            console.warn(`⚠️ [BulkUpdate] Nessun layer trovato per ${estStrat.name}`);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const dbLayers: any[] = original.layers ?? [];
+          if (dbLayers.length === 0) {
+            skipped.push({ id: estStrat.id, name: estStrat.name, reason: 'no_valid_layers' });
+            continue;
           }
-          
-          const priceDifference = Math.abs(estStrat.unitCost - newUnitCost);
-          const hasSignificantChange = priceDifference > 0.01;
-          
-          console.log(`[BulkUpdate] 💰 ANALISI PREZZI per "${estStrat.name}":`, {
-            id: estStrat.id,
-            originalId: estStrat.originalStratigraphyId,
-            oldCost: estStrat.unitCost,
-            newCost: newUnitCost,
-            priceDifference: priceDifference,
-            hasSignificantChange: hasSignificantChange,
-            comprehensive_cost_per_sqm: updatedStratigraphy.comprehensive_cost_per_sqm,
-            usedLayersData: true
-          });
-          
-          const newTotalCost = Math.round((estStrat.area * newUnitCost) * 100) / 100;
 
-          // 🔥 FIX: Update stratigraphy_data with new cost breakdown for totals calculation
+          const calcLayers = dbLayers.map(dbLayerToCalcLayer);
+          const result = computeBaseCosts(calcLayers, costPerHour);
+
+          if (result.validLayerCount === 0) {
+            skipped.push({
+              id: estStrat.id,
+              name: estStrat.name,
+              reason: 'no_valid_layers',
+              detail: `${result.invalidLayerCount} layer senza materiale/spessore`,
+            });
+            continue;
+          }
+
+          // Protezione: NON sovrascrivere il preventivo con 0€. Marca come da
+          // revisionare invece. Capita quando la stratigrafia originale è
+          // corrotta (materials cancellati, prezzi azzerati, ecc.).
+          if (result.comprehensiveCost <= 0) {
+            skipped.push({
+              id: estStrat.id,
+              name: estStrat.name,
+              reason: 'zero_cost_recalc',
+              detail: `${result.validLayerCount} layer validi ma costo totale calcolato = 0€`,
+            });
+            continue;
+          }
+
+          // F7.7: ricalcola anche il finish_cost dai componenti snapshot coi
+          // prezzi correnti (i materiali finitura possono aver cambiato prezzo).
+          let newFinishCost = 0;
+          let newFinishLaborMin: number | null = null;
+          const { data: currentRow } = await supabase
+            .from('estimate_stratigraphies')
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .select('finish_level, finish_components_data, finish_labor_minutes_per_sqm' as any)
+            .eq('id', estStrat.id)
+            .maybeSingle();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const finishSnap = (currentRow as any)?.finish_components_data;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          newFinishLaborMin = (currentRow as any)?.finish_labor_minutes_per_sqm ?? null;
+          if (Array.isArray(finishSnap) && finishSnap.length > 0) {
+            const matIds = finishSnap
+              .map((c: Record<string, unknown>) => c.material_id as string | undefined)
+              .filter((x): x is string => !!x);
+            const priceMap = new Map<string, { unit_price?: number; unit?: string; box_pieces?: number }>();
+            if (matIds.length > 0) {
+              const { data: freshMats } = await supabase
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                .from('materials_with_pricing' as any)
+                .select('id, unit_price, unit, box_pieces')
+                .in('id', matIds);
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              for (const m of (freshMats ?? []) as any[]) {
+                priceMap.set(m.id, m);
+              }
+            }
+            let materialsCost = 0;
+            for (const c of finishSnap as Array<Record<string, unknown>>) {
+              const fresh = priceMap.get(c.material_id as string);
+              const unitPrice = Number(fresh?.unit_price ?? c.unit_price ?? 0);
+              const unit = String(fresh?.unit ?? c.material_unit ?? '').toLowerCase().trim();
+              const box = Number(fresh?.box_pieces ?? c.box_pieces ?? 0);
+              const pricePerUsage = (unit === 'scatola' && box > 0) ? unitPrice / box : unitPrice;
+              materialsCost += Number(c.quantity_per_sqm ?? 0) * pricePerUsage;
+            }
+            const laborCost = ((newFinishLaborMin ?? 0) * costPerHour) / 60;
+            newFinishCost = Math.round((materialsCost + laborCost) * 10000) / 10000;
+          }
+
+          const newUnitCost = Math.round((result.comprehensiveCost + newFinishCost) * 100) / 100;
+          const newTotalCost = Math.round(estStrat.area * newUnitCost * 100) / 100;
+
+          // Snapshot composition aggiornato col nuovo breakdown.
           const updatedStratigraphyData = {
-            ...updatedStratigraphy,
-            material_cost_per_sqm: Math.round(materialCost * 1000) / 1000,
-            screw_cost_per_sqm: Math.round(screwCost * 1000) / 1000,
-            labor_cost_per_sqm: Math.round(laborCost * 1000) / 1000,
-            comprehensive_cost_per_sqm: newUnitCost,
-            installation_time_per_sqm: Math.round(totalInstallTime * 1000) / 1000,
-            cost_per_sqm: newUnitCost
+            ...original,
+            material_cost_per_sqm: result.materialCost,
+            screw_cost_per_sqm: result.screwCost,
+            labor_cost_per_sqm: result.laborCost,
+            comprehensive_cost_per_sqm: result.comprehensiveCost,
+            installation_time_per_sqm: result.installationTime,
+            cost_per_sqm: result.comprehensiveCost,
           };
 
-          // Update the estimate stratigraphy
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sortedLayers = [...dbLayers].sort((a: any, b: any) => a.position - b.position);
+
           const { error: updateError } = await supabase
             .from('estimate_stratigraphies')
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             .update({
               unit_cost: newUnitCost,
               total_cost: newTotalCost,
               stratigraphy_data: updatedStratigraphyData,
-              layers_data: updatedStratigraphy.layers?.sort((a: any, b: any) => a.position - b.position) || [],
-              prices_updated_at: new Date().toISOString()
-            })
+              layers_data: sortedLayers,
+              finish_cost_per_sqm: newFinishCost > 0 ? newFinishCost : null,
+              prices_updated_at: new Date().toISOString(),
+            } as any)
             .eq('id', estStrat.id);
 
           if (updateError) {
-            console.error(`Error updating estimate stratigraphy ${estStrat.id}:`, updateError);
+            failed.push({ id: estStrat.id, name: estStrat.name, error: updateError.message });
             continue;
           }
 
-          results.push({
+          updated.push({
             id: estStrat.id,
             name: estStrat.name,
             oldCost: estStrat.unitCost,
             newCost: newUnitCost,
-            updated: true
+            changed: Math.abs(estStrat.unitCost - newUnitCost) > 0.01,
           });
-        } catch (error) {
-          console.error(`Error processing stratigraphy ${estStrat.id}:`, error);
-          results.push({
+        } catch (err) {
+          failed.push({
             id: estStrat.id,
             name: estStrat.name,
-            updated: false,
-            error: error.message
+            error: err instanceof Error ? err.message : String(err),
           });
         }
       }
 
-      return { results, estimateId };
+      return { estimateId, updated, skipped, failed, costPerHour };
     },
-    onSuccess: ({ results, estimateId }) => {
-      const updatedCount = results.filter(r => r.updated).length;
-      
-      console.log(`[BulkUpdate] ✅ ${updatedCount} stratigrafie aggiornate usando calcolo dinamico con costo orario corrente`);
-      
-      // 🔥 FIX: Invalidazione specifica per l'estimate corrente per aggiornare la tabella
-      queryClient.invalidateQueries({ queryKey: ['estimate-stratigraphies', estimateId] });
-      queryClient.invalidateQueries({ queryKey: ['estimate', estimateId] });
-      
-      if (updatedCount > 0) {
-        // Controlla se ci sono stati cambiamenti reali nei prezzi
-        const realChanges = results.filter(r => r.updated && Math.abs(r.oldCost - r.newCost) > 0.01);
-        if (realChanges.length > 0) {
-          toast.success(`${realChanges.length} stratigrafie aggiornate con prezzi modificati!`);
-        } else {
-          toast.info(`${updatedCount} stratigrafie controllate - prezzi già aggiornati`);
-        }
-      } else {
-        toast.warning('Nessuna stratigrafia è stata aggiornata');
+    onSuccess: (report, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['estimate-stratigraphies', report.estimateId] });
+      queryClient.invalidateQueries({ queryKey: ['estimate', report.estimateId] });
+      // Toast riassuntivo conciso. Il dialog di esito viene mostrato dal
+      // componente chiamante (EstimateStratigraphiesSection) usando il report.
+      // I chiamanti single-row passano silentToast=true per gestirlo loro.
+      if (variables.silentToast) return;
+      const realChanges = report.updated.filter(r => r.changed).length;
+      if (realChanges > 0) {
+        toast.success(`${realChanges} stratigrafie aggiornate con prezzi modificati`);
+      } else if (report.updated.length > 0) {
+        toast.info(`${report.updated.length} stratigrafie verificate, prezzi già aggiornati`);
+      } else if (report.skipped.length > 0 && report.failed.length === 0) {
+        toast.warning('Nessuna stratigrafia aggiornata: vedi dettagli');
       }
     },
     onError: (error) => {
-      console.error('Error in bulk update:', error);
-      if (error.message.includes('contrattualizzato')) {
-        toast.error('Impossibile aggiornare prezzi: preventivo contrattualizzato');
-      } else {
-        toast.error('Errore nell\'aggiornamento dei prezzi');
-      }
+      console.error('[useBulkUpdateEstimateStratigraphyPrices] error:', error);
+      const msg = error.message?.includes('contrattualizzato')
+        ? 'Impossibile aggiornare prezzi: preventivo contrattualizzato'
+        : `Errore aggiornamento prezzi: ${error.message ?? 'sconosciuto'}`;
+      toast.error(msg);
     },
   });
 
   return {
     bulkUpdatePrices: bulkUpdateMutation.mutate,
+    /** Variante async: ritorna il report strutturato (per UI di esito). */
+    bulkUpdatePricesAsync: bulkUpdateMutation.mutateAsync,
     isBulkUpdating: bulkUpdateMutation.isPending,
   };
 };

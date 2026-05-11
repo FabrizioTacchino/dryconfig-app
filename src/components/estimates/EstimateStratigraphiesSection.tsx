@@ -4,12 +4,15 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Plus, RefreshCcw, Loader, Lock } from 'lucide-react';
-import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { EstimateStratigraphy } from '@/types/estimateStratigraphy';
 import EstimateStratigraphiesTable from './EstimateStratigraphiesTable';
-import { useBulkUpdateEstimateStratigraphyPrices } from '@/hooks/useBulkUpdateEstimateStratigraphyPrices';
+import {
+  useBulkUpdateEstimateStratigraphyPrices,
+  type BulkUpdateReport,
+} from '@/hooks/useBulkUpdateEstimateStratigraphyPrices';
 import { useEstimateStratigraphiesSorting, EstimateStratigraphySortField } from '@/hooks/useEstimateStratigraphiesSorting';
+import BulkUpdatePricesReportDialog from './BulkUpdatePricesReportDialog';
 
 interface EstimateStratigraphiesSectionProps {
   stratigraphies: (EstimateStratigraphy & { stratigraphy?: any })[];
@@ -35,10 +38,9 @@ const EstimateStratigraphiesSection = ({
   isUpdatingPrices = false,
 }: EstimateStratigraphiesSectionProps) => {
   const navigate = useNavigate();
-  const [updatingAll, setUpdatingAll] = useState(false);
-  const [progress, setProgress] = useState<number | null>(null);
-  const [progressMax, setProgressMax] = useState<number | null>(null);
-  const { bulkUpdatePrices, isBulkUpdating } = useBulkUpdateEstimateStratigraphyPrices();
+  const [report, setReport] = useState<BulkUpdateReport | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const { bulkUpdatePricesAsync, isBulkUpdating } = useBulkUpdateEstimateStratigraphyPrices();
 
   // Funzione per aggiungere dal Configuratore
   const handleAddFromConfigurator = () => {
@@ -59,32 +61,22 @@ const EstimateStratigraphiesSection = ({
   // Ottengo solo le stratigrafie snapshot vere
   const stratigrafieSnapshot = stratigraphies.filter(s => s.isSnapshot);
 
-  // Funzione per batch update
-  const handleBulkUpdatePrices = () => {
-    if (!canUpdateAllPrices) {
-      return; // Non eseguire se il preventivo è contrattualizzato
-    }
-
-    setUpdatingAll(true);
-    setProgress(0);
-    setProgressMax(stratigrafieSnapshot.length);
-    // Per UX: progress bar finta, backend non fornisce lo stato -- la resettiamo dopo ~2s
-    bulkUpdatePrices({
-      estimateStratigraphies: stratigrafieSnapshot,
-    });
-    let curr = 0;
-    const intv = setInterval(() => {
-      curr++;
-      setProgress(Math.min(curr, stratigrafieSnapshot.length));
-      if (curr >= stratigrafieSnapshot.length) {
-        clearInterval(intv);
-        setTimeout(() => {
-          setUpdatingAll(false);
-          setProgress(null);
-          setProgressMax(null);
-        }, 800);
+  // Batch update prezzi: usa l'async per ricevere il report strutturato e
+  // mostrare un dialog di esito quando ci sono righe saltate o fallite.
+  // Il toast riassuntivo è gestito dall'onSuccess interno del mutation.
+  const handleBulkUpdatePrices = async () => {
+    if (!canUpdateAllPrices) return;
+    try {
+      const result = await bulkUpdatePricesAsync({ estimateStratigraphies: stratigrafieSnapshot });
+      setReport(result);
+      // Apri il dialog solo se c'è qualcosa che richiede attenzione.
+      if (result.skipped.length > 0 || result.failed.length > 0) {
+        setReportOpen(true);
       }
-    }, 400);
+    } catch (err) {
+      // L'onError del mutation ha già mostrato il toast d'errore.
+      console.error('[EstimateStratigraphiesSection] bulk update failed:', err);
+    }
   };
 
   const isContracted = estimateStatus === 'contracted';
@@ -140,30 +132,32 @@ const EstimateStratigraphiesSection = ({
                 onClick={handleBulkUpdatePrices}
                 className={`gap-2 ${canUpdateAllPrices ? 'bg-primary/90 hover:bg-primary text-primary-foreground' : ''}`}
                 variant="outline"
-                disabled={isBulkUpdating || updatingAll || !canUpdateAllPrices}
+                disabled={isBulkUpdating || !canUpdateAllPrices}
                 title={canUpdateAllPrices ? "Aggiorna tutti i prezzi delle stratigrafie snapshot" : "Non consentito: preventivo contrattualizzato"}
               >
-                {isBulkUpdating || updatingAll ? (
+                {isBulkUpdating ? (
                   <Loader className="h-4 w-4 animate-spin" />
                 ) : canUpdateAllPrices ? (
                   <RefreshCcw className="h-4 w-4" />
                 ) : (
                   <Lock className="h-4 w-4" />
                 )}
-                Aggiorna Prezzi Tutte
+                {isBulkUpdating ? 'Aggiornamento…' : 'Aggiorna Prezzi Tutte'}
+              </Button>
+            )}
+            {report && (
+              <Button
+                onClick={() => setReportOpen(true)}
+                variant="ghost"
+                size="sm"
+                className="text-xs"
+                title="Vedi esito ultimo aggiornamento"
+              >
+                Vedi esito
               </Button>
             )}
           </div>
         </div>
-        {/* Visual progress (anche finto, migliora UX) */}
-        {(isBulkUpdating || updatingAll) && stratigrafieSnapshot.length > 0 && (
-          <div className="mt-2 flex items-center gap-2 w-full">
-            <Progress value={progress !== null ? (progress / (progressMax || 1)) * 100 : 0} max={100} />
-            <span className="text-xs text-muted-foreground ml-2">
-              Aggiornamento prezzi in corso...
-            </span>
-          </div>
-        )}
       </CardHeader>
       <CardContent>
         <EstimateStratigraphiesTable
@@ -180,6 +174,12 @@ const EstimateStratigraphiesSection = ({
           onSortChange={handleSortChange}
         />
       </CardContent>
+
+      <BulkUpdatePricesReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        report={report}
+      />
     </Card>
   );
 };

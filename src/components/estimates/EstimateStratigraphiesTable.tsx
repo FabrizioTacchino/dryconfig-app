@@ -10,6 +10,8 @@ import {
 import { EstimateStratigraphy } from '@/hooks/useEstimateStratigraphies';
 import EstimateStratigraphiesEmptyState from './components/EstimateStratigraphiesEmptyState';
 import EstimateStratigraphyRow from './components/EstimateStratigraphyRow';
+import ReconnectStratigraphyDialog from './ReconnectStratigraphyDialog';
+import SnapshotViewerDialog from './SnapshotViewerDialog';
 import { EstimateStratigraphySortField, SortDirection } from '@/hooks/useEstimateStratigraphiesSorting';
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 
@@ -43,6 +45,15 @@ const EstimateStratigraphiesTable = ({
 }: EstimateStratigraphiesTableProps) => {
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editData, setEditData] = React.useState<any>({});
+  // Stato dialog "Ricollega al catalogo" per row orfane (originale eliminata).
+  const [reconnectItem, setReconnectItem] = React.useState<
+    (EstimateStratigraphy & { stratigraphy?: any }) | null
+  >(null);
+  // Stato dialog "Visualizza snapshot" (read-only) per row orfane: l'icona
+  // Eye non può aprire il configuratore (id catalogo NULL) → snapshot viewer.
+  const [snapshotItem, setSnapshotItem] = React.useState<
+    (EstimateStratigraphy & { stratigraphy?: any }) | null
+  >(null);
 
   const canEdit = estimateStatus !== 'contracted';
 
@@ -51,7 +62,11 @@ const EstimateStratigraphiesTable = ({
     setEditData({
       name: stratigraphy.name,
       area: stratigraphy.area,
-      // unitCost removed - not editable from estimates
+      // unitCost editabile SOLO sulle row orfane (originale eliminata): la
+      // row component lo mostra come input quando isSnapshot=true e
+      // originalStratigraphyId è null. Per le altre row il campo è incluso
+      // ma ignorato dalla UI (read-only display).
+      unitCost: stratigraphy.unitCost,
     });
   };
 
@@ -144,10 +159,30 @@ const EstimateStratigraphiesTable = ({
               onDelete={onDeleteStratigraphy}
               onUpdatePrices={onUpdatePrices}
               onEditDataChange={setEditData}
+              onReconnect={setReconnectItem}
+              onViewSnapshot={setSnapshotItem}
             />
           ))}
         </TableBody>
       </Table>
+
+      <ReconnectStratigraphyDialog
+        open={!!reconnectItem}
+        onOpenChange={(open) => { if (!open) setReconnectItem(null); }}
+        item={reconnectItem}
+      />
+
+      <SnapshotViewerDialog
+        open={!!snapshotItem}
+        onOpenChange={(open) => { if (!open) setSnapshotItem(null); }}
+        item={snapshotItem}
+        onReconnect={() => {
+          if (snapshotItem) {
+            setReconnectItem(snapshotItem);
+            setSnapshotItem(null);
+          }
+        }}
+      />
     </div>
   );
 };

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { EstimateStratigraphy } from '@/types/estimateStratigraphy';
+import { useWasteFactors } from './useWasteFactors';
 
 export interface MaterialSummaryItem {
   materialId: string;
@@ -7,229 +8,250 @@ export interface MaterialSummaryItem {
   materialCode: string;
   supplier: string;
   category: string;
+  /** Unità d'acquisto (es. 'scatola', 'mq', 'ml', 'pz'). */
   unit: string;
+  /** Prezzo nella unità d'acquisto (es. €/scatola per le viti). Netto/scontato. */
   unitPrice: number;
+  /**
+   * Quantità d'acquisto: scatole intere per viti, m²/ml/pz arrotondati per gli altri.
+   * Calcolato in fase 2 dopo aver aggregato tutte le stratigrafie.
+   */
   totalQuantity: number;
+  /** Costo totale d'acquisto = totalQuantity × unitPrice. */
   totalCost: number;
+  /** Per le viti: pezzi effettivamente utilizzati (teorico, prima dello sfrido). */
+  piecesUsed?: number;
+  /** Per le viti: pezzi per scatola (dal catalogo). */
+  boxPieces?: number;
+  /** Quantità teorica di consumo (somma su tutte le stratigrafie, no sfrido). */
+  theoreticalQuantity?: number;
+  /** Sfrido % applicato (0-100). */
+  wastePercentage?: number;
   stratigraphyNames: string[];
 }
 
-export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraphy & { stratigraphy?: any })[] = []) => {
-  const materialsSummary = useMemo(() => {
-    const materialsMap = new Map<string, MaterialSummaryItem>();
+/**
+ * Stato interno accumulato in fase 1. Manca `totalQuantity`/`totalCost`
+ * perché vanno calcolati in fase 2 dopo aver visto tutte le stratigrafie
+ * (per le viti: somma pezzi → ceil su scatole, altrimenti errore di
+ * doppio-arrotondamento layer-per-layer).
+ */
+interface MaterialAccumulator {
+  materialId: string;
+  materialName: string;
+  materialCode: string;
+  supplier: string;
+  category: string;
+  /** Unità d'acquisto. */
+  unit: string;
+  /** Prezzo per unità d'acquisto (es. €/scatola). */
+  unitPrice: number;
+  /** True se vendita a scatola: applicare ceil per scatole intere. */
+  isPackaged: boolean;
+  /** Pezzi per scatola (se isPackaged). */
+  boxPieces?: number;
+  /** Per le viti: pezzi totali. Per altri: come `theoreticalQuantity`. */
+  totalPieces?: number;
+  /** Quantità teorica accumulata (pre-sfrido). Unità coerente con `usageUnit`. */
+  theoreticalQuantity: number;
+  /** Unità di misura del consumo teorico (es. 'pz' per viti, 'mq' per lastre). */
+  usageUnit: string;
+  wastePercentage: number;
+  stratigraphyNames: string[];
+}
 
-    console.log('[useMaterialsSummary] 🔍 PROCESSING STRATIGRAPHIES:', estimateStratigraphies.length);
+const CATEGORY_LABELS: Record<string, string> = {
+  board: 'Lastre',
+  structure_frame: 'Montanti',
+  structure_guide: 'Guide',
+  insulation: 'Isolamento',
+  accessory: 'Accessori',
+  screw: 'Viti',
+  finish: 'Finitura',
+  ceiling_tile: 'Controsoffitto',
+  other: 'Altri',
+};
+
+export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraphy & { stratigraphy?: any })[] = []) => {
+  const { wasteMap } = useWasteFactors();
+
+  const materialsSummary = useMemo(() => {
+    // ============== FASE 1: ACCUMULO QUANTITÀ TEORICHE ==============
+    const acc = new Map<string, MaterialAccumulator>();
+
+    const ensureAcc = (key: string, init: () => MaterialAccumulator): MaterialAccumulator => {
+      let a = acc.get(key);
+      if (!a) { a = init(); acc.set(key, a); }
+      return a;
+    };
 
     estimateStratigraphies.forEach((estStrat) => {
-      console.log('[useMaterialsSummary] 📋 Processing stratigraphy:', {
-        id: estStrat.id,
-        name: estStrat.name,
-        hasStratigraphy: !!estStrat.stratigraphy,
-        hasLayers: !!estStrat.stratigraphy?.layers,
-        layersCount: estStrat.stratigraphy?.layers?.length || 0,
-        area: estStrat.area,
-        wallHeight: estStrat.wallHeight
-      });
-
-      if (!estStrat.stratigraphy?.layers || !estStrat.area) {
-        console.warn('[useMaterialsSummary] ⚠️ Skipping stratigraphy - missing layers or area:', estStrat.name);
-        return;
-      }
-
-      // Default wallHeight se non presente
+      if (!estStrat.stratigraphy?.layers || !estStrat.area) return;
       const wallHeight = estStrat.wallHeight || 2.7;
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       estStrat.stratigraphy.layers.forEach((layer: any) => {
-        console.log('[useMaterialsSummary] 🔧 Processing layer:', {
-          layerId: layer.id,
-          position: layer.position,
-          hasMaterials: !!layer.materials,
-          materialName: layer.materials?.name,
-          materialCategory: layer.materials?.category,
-          hasScrewMaterials: !!layer.screw_materials,
-          screwMaterialName: layer.screw_materials?.name,
-          screwQuantity: layer.screw_quantity
-        });
+        const material = layer.materials ?? layer.material;
+        if (!material) return;
 
-        if (!layer.materials) {
-          console.warn('[useMaterialsSummary] ⚠️ Skipping layer - no materials:', layer.id);
-          return;
-        }
-
-        const material = layer.materials;
-        const materialKey = `${material.id}_${material.category}`;
-        
-        // Calcola la quantità per questo layer
-        let quantity = 0;
-        const incidence = material.incidence_per_sqm || 1;
-        
-        if (material.category === 'board' || material.category === 'insulation') {
-          quantity = estStrat.area * incidence;
-        } else if (material.category === 'structure_frame' || material.category === 'structure_guide') {
+        // === MATERIALE PRINCIPALE (lastre, struttura, isolanti, accessori) ===
+        const incidence = Number(material.incidence_per_sqm ?? 1);
+        let theoreticalQty = 0;
+        if (material.category === 'board' || material.category === 'insulation' || material.category === 'accessory') {
+          theoreticalQty = estStrat.area * incidence;
+        } else if (material.category === 'structure_frame') {
           const interAxis = layer.inter_axis || 600;
-          if (material.category === 'structure_frame') {
-            quantity = (estStrat.area / wallHeight) * (1000 / interAxis) * wallHeight;
-          } else {
-            quantity = (estStrat.area / wallHeight) * 2; // guide top e bottom
-          }
-        } else if (material.category === 'accessory') {
-          quantity = estStrat.area * incidence;
+          theoreticalQty = estStrat.area * (1000 / interAxis);
+        } else if (material.category === 'structure_guide') {
+          theoreticalQty = (estStrat.area / wallHeight) * 2;
+        } else if (material.category !== 'screw') {
+          theoreticalQty = estStrat.area * incidence;
         }
 
-        console.log('[useMaterialsSummary] 💰 Material quantity calculated:', {
-          materialName: material.name,
-          category: material.category,
-          quantity: quantity,
-          incidence: incidence,
-          area: estStrat.area
-        });
-
-        // 🔥 FIX: Aggiungi viti se presenti - SEMPRE, anche se quantity del materiale principale è 0
-        if (layer.screw_materials && (layer.screw_quantity > 0 || layer.screw_cost_per_sqm > 0)) {
-          const screwKey = `${layer.screw_materials.id}_screw`;
-          
-          // Calcola la quantità di viti basandosi su screw_quantity o screw_cost_per_sqm
-          let screwQuantity = 0;
-          if (layer.screw_quantity && layer.screw_quantity > 0) {
-            screwQuantity = estStrat.area * layer.screw_quantity;
-          } else if (layer.screw_cost_per_sqm && layer.screw_cost_per_sqm > 0 && layer.screw_materials.unit_price && layer.screw_materials.unit_price > 0) {
-            // Se abbiamo solo screw_cost_per_sqm, calcoliamo la quantità dal costo
-            screwQuantity = (estStrat.area * layer.screw_cost_per_sqm) / layer.screw_materials.unit_price;
-          }
-
-          console.log('[useMaterialsSummary] 🔩 SCREW CALCULATION:', {
-            screwMaterialName: layer.screw_materials.name,
-            screwKey: screwKey,
-            screwQuantityFromLayer: layer.screw_quantity,
-            screwCostPerSqm: layer.screw_cost_per_sqm,
-            unitPrice: layer.screw_materials.unit_price,
-            area: estStrat.area,
-            calculatedScrewQuantity: screwQuantity,
-            stratigraphyName: estStrat.name
-          });
-          
-          if (screwQuantity > 0) {
-            if (materialsMap.has(screwKey)) {
-              const existing = materialsMap.get(screwKey)!;
-              existing.totalQuantity += screwQuantity;
-              existing.totalCost = existing.totalQuantity * existing.unitPrice;
-              if (!existing.stratigraphyNames.includes(estStrat.name)) {
-                existing.stratigraphyNames.push(estStrat.name);
-              }
-              console.log('[useMaterialsSummary] ➕ UPDATED existing screw:', {
-                name: existing.materialName,
-                newQuantity: existing.totalQuantity,
-                newCost: existing.totalCost
-              });
-            } else {
-              const newScrewItem = {
-                materialId: layer.screw_materials.id,
-                materialName: layer.screw_materials.name,
-                materialCode: layer.screw_materials.code || '',
-                supplier: layer.screw_materials.supplier || '',
-                category: 'Viti',
-                unit: layer.screw_materials.unit || 'pz',
-                unitPrice: layer.screw_materials.unit_price || 0,
-                totalQuantity: screwQuantity,
-                totalCost: screwQuantity * (layer.screw_materials.unit_price || 0),
-                stratigraphyNames: [estStrat.name]
-              };
-              
-              materialsMap.set(screwKey, newScrewItem);
-              console.log('[useMaterialsSummary] ✅ ADDED new screw:', {
-                name: newScrewItem.materialName,
-                quantity: newScrewItem.totalQuantity,
-                cost: newScrewItem.totalCost,
-                unitPrice: newScrewItem.unitPrice
-              });
-            }
-          } else {
-            console.warn('[useMaterialsSummary] ⚠️ Screw quantity is 0 or negative:', {
-              screwMaterialName: layer.screw_materials.name,
-              screwQuantity: screwQuantity,
-              layer_screw_quantity: layer.screw_quantity,
-              layer_screw_cost_per_sqm: layer.screw_cost_per_sqm
-            });
-          }
-        } else {
-          console.log('[useMaterialsSummary] ❌ No screw materials or quantity for layer:', {
-            layerId: layer.id,
-            hasScrewMaterials: !!layer.screw_materials,
-            screwQuantity: layer.screw_quantity,
-            screwCostPerSqm: layer.screw_cost_per_sqm
-          });
+        if (theoreticalQty > 0) {
+          const matKey = `${material.id}_${material.category}`;
+          const matUnit = String(material.unit ?? 'mq').toLowerCase().trim();
+          const matBox = Number(material.box_pieces ?? 0);
+          const a = ensureAcc(matKey, () => ({
+            materialId: material.id,
+            materialName: material.name,
+            materialCode: material.code || '',
+            supplier: material.supplier || '',
+            category: CATEGORY_LABELS[material.category] || material.category,
+            unit: (matUnit === 'scatola' && matBox > 0) ? 'scatola' : matUnit,
+            unitPrice: Number(material.unit_price ?? 0),
+            isPackaged: matUnit === 'scatola' && matBox > 0,
+            boxPieces: matBox > 0 ? matBox : undefined,
+            theoreticalQuantity: 0,
+            usageUnit: matUnit,
+            wastePercentage: wasteMap[material.category] ?? 0,
+            stratigraphyNames: [],
+          }));
+          a.theoreticalQuantity += theoreticalQty;
+          if (!a.stratigraphyNames.includes(estStrat.name)) a.stratigraphyNames.push(estStrat.name);
         }
 
-        // Aggiungi il materiale principale solo se la quantità è > 0
-        if (quantity > 0) {
-          if (materialsMap.has(materialKey)) {
-            const existing = materialsMap.get(materialKey)!;
-            existing.totalQuantity += quantity;
-            existing.totalCost = existing.totalQuantity * existing.unitPrice;
-            if (!existing.stratigraphyNames.includes(estStrat.name)) {
-              existing.stratigraphyNames.push(estStrat.name);
-            }
-          } else {
-            // Mappa le categorie per una migliore visualizzazione
-            const categoryMap: Record<string, string> = {
-              'board': 'Lastre',
-              'structure_frame': 'Montanti',
-              'structure_guide': 'Guide',
-              'insulation': 'Isolamento',
-              'accessory': 'Accessori',
-              'screw': 'Viti',
-              'other': 'Altri'
-            };
-
-            materialsMap.set(materialKey, {
-              materialId: material.id,
-              materialName: material.name,
-              materialCode: material.code || '',
-              supplier: material.supplier || '',
-              category: categoryMap[material.category] || material.category,
-              unit: material.unit || 'mq',
-              unitPrice: material.unit_price || 0,
-              totalQuantity: quantity,
-              totalCost: quantity * (material.unit_price || 0),
-              stratigraphyNames: [estStrat.name]
-            });
-          }
+        // === VITI del layer ===
+        const screw = layer.screw_materials ?? layer.screwMaterial;
+        const screwQtyPerSqm = Number(layer.screw_quantity ?? layer.screwQuantity ?? 0);
+        if (screw && screwQtyPerSqm > 0) {
+          const screwKey = `${screw.id}_screw_purchase`;
+          const piecesTheo = estStrat.area * screwQtyPerSqm;
+          const boxPieces = Number(screw.box_pieces ?? 0);
+          const screwUnit = String(screw.unit ?? 'pz').toLowerCase().trim();
+          const a = ensureAcc(screwKey, () => ({
+            materialId: screw.id,
+            materialName: screw.name,
+            materialCode: screw.code || '',
+            supplier: screw.supplier || '',
+            category: 'Viti',
+            unit: (screwUnit === 'scatola' && boxPieces > 0) ? 'scatola' : (screwUnit || 'pz'),
+            unitPrice: Number(screw.unit_price ?? 0),
+            isPackaged: screwUnit === 'scatola' && boxPieces > 0,
+            boxPieces: boxPieces > 0 ? boxPieces : undefined,
+            totalPieces: 0,
+            theoreticalQuantity: 0,
+            usageUnit: 'pz',
+            wastePercentage: wasteMap['screw'] ?? 0,
+            stratigraphyNames: [],
+          }));
+          a.totalPieces = (a.totalPieces ?? 0) + piecesTheo;
+          a.theoreticalQuantity += piecesTheo;
+          if (!a.stratigraphyNames.includes(estStrat.name)) a.stratigraphyNames.push(estStrat.name);
         }
       });
+
+      // === FINITURA (a livello parete, non layer) ===
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const finishComps = Array.isArray((estStrat as any).finishComponentsData)
+        ? (estStrat as any).finishComponentsData as Array<Record<string, unknown>>
+        : [];
+      for (const comp of finishComps) {
+        const matId = comp.material_id as string | undefined;
+        if (!matId) continue;
+        const qtyPerSqm = Number(comp.quantity_per_sqm ?? 0);
+        if (qtyPerSqm <= 0) continue;
+
+        const finishKey = `${matId}_finish`;
+        const matUnit = String(comp.material_unit ?? 'pz').toLowerCase().trim();
+        const box = Number(comp.box_pieces ?? 0);
+        const theoTotalQty = estStrat.area * qtyPerSqm;
+        const a = ensureAcc(finishKey, () => ({
+          materialId: matId,
+          materialName: (comp.material_name as string) || 'Componente finitura',
+          materialCode: (comp.material_code as string) || '',
+          supplier: (comp.material_supplier as string) || '',
+          category: 'Finitura',
+          unit: (matUnit === 'scatola' && box > 0) ? 'scatola' : (matUnit || 'pz'),
+          unitPrice: Number(comp.unit_price ?? 0),
+          isPackaged: matUnit === 'scatola' && box > 0,
+          boxPieces: box > 0 ? box : undefined,
+          theoreticalQuantity: 0,
+          usageUnit: matUnit || 'pz',
+          wastePercentage: wasteMap['finish'] ?? 0,
+          stratigraphyNames: [],
+        }));
+        a.theoreticalQuantity += theoTotalQty;
+        if (!a.stratigraphyNames.includes(estStrat.name)) a.stratigraphyNames.push(estStrat.name);
+      }
     });
 
-    const result = Array.from(materialsMap.values()).sort((a, b) => {
-      // Ordina per categoria, poi per nome
-      if (a.category !== b.category) {
-        return a.category.localeCompare(b.category);
+    // ============== FASE 2: APPLICA SFRIDO + SCATOLE INTERE ==============
+    const items: MaterialSummaryItem[] = [];
+    for (const a of acc.values()) {
+      const wasteMultiplier = 1 + (a.wastePercentage || 0) / 100;
+      let totalQuantity: number;
+      let totalCost: number;
+      let pieces: number | undefined;
+
+      if (a.isPackaged && a.boxPieces && a.boxPieces > 0) {
+        // Vendita a scatola: somma pezzi → ceil su scatole intere UNA SOLA volta.
+        const totalPiecesTheo = a.totalPieces ?? a.theoreticalQuantity;
+        const piecesWithWaste = totalPiecesTheo * wasteMultiplier;
+        totalQuantity = Math.ceil(piecesWithWaste / a.boxPieces);
+        totalCost = Math.round(totalQuantity * a.unitPrice * 100) / 100;
+        pieces = totalPiecesTheo;
+      } else {
+        // Vendita decimale (kg, m², ml, pz singolo): applica sfrido + arrotonda 2 dec.
+        const qtyWithWaste = a.theoreticalQuantity * wasteMultiplier;
+        totalQuantity = Math.round(qtyWithWaste * 100) / 100;
+        totalCost = Math.round(totalQuantity * a.unitPrice * 100) / 100;
+        if (a.totalPieces !== undefined) pieces = a.totalPieces;
       }
+
+      items.push({
+        materialId: a.materialId,
+        materialName: a.materialName,
+        materialCode: a.materialCode,
+        supplier: a.supplier,
+        category: a.category,
+        unit: a.unit,
+        unitPrice: a.unitPrice,
+        totalQuantity,
+        totalCost,
+        piecesUsed: pieces,
+        boxPieces: a.boxPieces,
+        theoreticalQuantity: a.theoreticalQuantity,
+        wastePercentage: a.wastePercentage,
+        stratigraphyNames: a.stratigraphyNames,
+      });
+    }
+
+    return items.sort((a, b) => {
+      if (a.category !== b.category) return a.category.localeCompare(b.category);
       return a.materialName.localeCompare(b.materialName);
     });
-
-    console.log('[useMaterialsSummary] 🎯 FINAL MATERIALS SUMMARY:', {
-      totalMaterials: result.length,
-      screwMaterials: result.filter(m => m.category === 'Viti').length,
-      materialNames: result.map(m => `${m.materialName} (${m.category})`),
-      screwDetails: result.filter(m => m.category === 'Viti').map(s => ({
-        name: s.materialName,
-        quantity: s.totalQuantity,
-        cost: s.totalCost,
-        stratigraphies: s.stratigraphyNames
-      }))
-    });
-
-    return result;
-  }, [estimateStratigraphies]);
+  }, [estimateStratigraphies, wasteMap]);
 
   const totalCost = useMemo(() => {
-    return materialsSummary.reduce((sum, item) => sum + item.totalCost, 0);
+    return materialsSummary.reduce((sum, item) => sum + (item.totalCost || 0), 0);
   }, [materialsSummary]);
 
-  // Calcola il costo totale manodopera da tutte le stratigrafie
   const totalLaborCost = useMemo(() => {
     return estimateStratigraphies.reduce((sum, estStrat) => {
-      const laborCostPerSqm = estStrat.stratigraphy?.labor_cost_per_sqm || 0;
-      return sum + (laborCostPerSqm * estStrat.area);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const laborCostPerSqm = Number((estStrat.stratigraphy as any)?.labor_cost_per_sqm ?? 0);
+      return sum + laborCostPerSqm * Number(estStrat.area ?? 0);
     }, 0);
   }, [estimateStratigraphies]);
 
@@ -247,6 +269,6 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
     totalCost,
     totalLaborCost,
     totalByCategory,
-    isEmpty: materialsSummary.length === 0
+    isEmpty: materialsSummary.length === 0,
   };
 };

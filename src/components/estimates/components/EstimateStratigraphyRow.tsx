@@ -4,9 +4,10 @@ import { TableCell, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Clock } from 'lucide-react';
+import { RefreshCw, Clock, Unlink, AlertTriangle } from 'lucide-react';
 import { EstimateStratigraphy } from '@/hooks/useEstimateStratigraphies';
-import MiniStratigraphyPreview from '@/components/configurator/components/MiniStratigraphyPreview';
+import MiniSectionPreview from '@/components/configurator-v2/list-view/MiniSectionPreview';
+import { normalizeSnapshotLayers } from '@/components/configurator-v2/hooks/normalizeSnapshotLayers';
 import EstimateStratigraphyActions from './EstimateStratigraphyActions';
 
 interface EstimateStratigraphyRowProps {
@@ -23,6 +24,10 @@ interface EstimateStratigraphyRowProps {
   onDelete: (id: string) => void;
   onUpdatePrices?: (estimateStratigraphyId: string, originalStratigraphyId: string) => void;
   onEditDataChange: (data: any) => void;
+  /** Apre il dialog di ricollegamento al catalogo per row orfane. */
+  onReconnect?: (item: EstimateStratigraphy & { stratigraphy?: any }) => void;
+  /** Apre il viewer read-only dello snapshot per row orfane (chiamato dall'icona Eye). */
+  onViewSnapshot?: (item: EstimateStratigraphy & { stratigraphy?: any }) => void;
 }
 
 const EstimateStratigraphyRow = ({
@@ -39,8 +44,14 @@ const EstimateStratigraphyRow = ({
   onDelete,
   onUpdatePrices,
   onEditDataChange,
+  onReconnect,
+  onViewSnapshot,
 }: EstimateStratigraphyRowProps) => {
   const isEditing = editingId === item.id;
+  // Una row è "orfana" quando ha lo snapshot ma l'originale del catalogo è
+  // stata eliminata (FK SET NULL → originalStratigraphyId NULL). Su queste
+  // row non possiamo "Aggiorna prezzi" automatico — offriamo edit manuale.
+  const isOrphan = !!item.isSnapshot && !item.originalStratigraphyId;
 
   const formatDate = (date?: Date) => {
     if (!date) return 'N/A';
@@ -69,9 +80,9 @@ const EstimateStratigraphyRow = ({
     <TableRow key={item.id} className="hover:bg-gray-50">
       <TableCell>
         <div className="w-16 h-12 border border-gray-200 rounded overflow-hidden bg-white">
-          {item.stratigraphy ? (
-            <MiniStratigraphyPreview 
-              stratigraphy={item.stratigraphy}
+          {item.stratigraphy?.layers ? (
+            <MiniSectionPreview
+              layers={normalizeSnapshotLayers(item.stratigraphy.layers as unknown[])}
               className="w-full h-full"
             />
           ) : (
@@ -95,9 +106,15 @@ const EstimateStratigraphyRow = ({
             {item.description && (
               <div className="text-sm text-muted-foreground mt-1">{item.description}</div>
             )}
-            {item.isSnapshot && (
-              <Badge variant="outline" className="text-xs mt-1 bg-blue-50 text-blue-700">
-                Copia Indipendente
+            {item.isSnapshot && !isOrphan && (
+              <Badge variant="outline" className="text-xs mt-1 bg-blue-50 text-blue-700 border-blue-200">
+                Copia indipendente
+              </Badge>
+            )}
+            {isOrphan && (
+              <Badge variant="outline" className="text-xs mt-1 bg-amber-50 text-amber-800 border-amber-200 gap-1">
+                <Unlink className="h-3 w-3" />
+                Originale eliminata
               </Badge>
             )}
           </div>
@@ -143,13 +160,29 @@ const EstimateStratigraphyRow = ({
       </TableCell>
       
       <TableCell>
-        <div className="font-mono text-sm">
-          € {item.unitCost.toFixed(2)}
-        </div>
-        {isEditing && (
-          <div className="text-xs text-muted-foreground mt-1">
-            Costo fisso dal calcolo
+        {isEditing && isOrphan ? (
+          <div className="space-y-1">
+            <Input
+              type="number"
+              value={editData.unitCost ?? ''}
+              onChange={(e) => onEditDataChange({ ...editData, unitCost: Number(e.target.value) })}
+              className="w-24 font-mono"
+              min="0"
+              step="0.01"
+            />
+            <div className="text-[10px] text-amber-700 leading-tight">
+              Modifica manuale (originale eliminata)
+            </div>
           </div>
+        ) : (
+          <>
+            <div className="font-mono text-sm">€ {item.unitCost.toFixed(2)}</div>
+            {isEditing && !isOrphan && (
+              <div className="text-xs text-muted-foreground mt-1">
+                Costo fisso dal calcolo
+              </div>
+            )}
+          </>
         )}
       </TableCell>
       
@@ -168,7 +201,8 @@ const EstimateStratigraphyRow = ({
                 <span className="text-muted-foreground">Aggiornati al:</span>
               </div>
               <div className="font-medium">{formatDate(item.pricesUpdatedAt)}</div>
-              {onUpdatePrices && item.originalStratigraphyId && canEdit && (
+              {/* Aggiorna Prezzi: solo se l'originale del catalogo esiste ancora. */}
+              {!isOrphan && onUpdatePrices && item.originalStratigraphyId && canEdit && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -189,6 +223,29 @@ const EstimateStratigraphyRow = ({
                   )}
                 </Button>
               )}
+              {/* Row orfana: aggiornamento auto non possibile, suggerisce
+                  alternative. */}
+              {isOrphan && canEdit && (
+                <div className="space-y-1.5 mt-1">
+                  <div className="flex items-start gap-1 text-amber-800 leading-tight">
+                    <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                    <span className="text-[11px]">
+                      Originale eliminata: modifica il prezzo manualmente o ricollega al catalogo.
+                    </span>
+                  </div>
+                  {onReconnect && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onReconnect(item)}
+                      className="h-7 px-2 text-xs w-full gap-1"
+                    >
+                      <Unlink className="h-3 w-3" />
+                      Ricollega al catalogo
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <span className="text-muted-foreground">Dati live</span>
@@ -207,6 +264,7 @@ const EstimateStratigraphyRow = ({
           onSaveEdit={onSaveEdit}
           onCancelEdit={onCancelEdit}
           onDelete={() => onDelete(item.id)}
+          onViewSnapshot={onViewSnapshot ? () => onViewSnapshot(item) : undefined}
         />
       </TableCell>
     </TableRow>

@@ -59,7 +59,20 @@ export interface StructureBlock {
   insulationLabel: string | null;
 }
 
-export type WallBlock = BoardBlock | StructureBlock;
+/**
+ * Isolante NON adiacente a una struttura. Tecnicamente sbagliato
+ * (l'isolante va nel vano dei montanti) ma lo rendiamo lo stesso
+ * con un warning visivo, così l'utente capisce dov'è il problema.
+ */
+export interface OrphanInsulationBlock {
+  kind: 'orphan_insulation';
+  layer: LayerV2;
+  depthMm: number;
+  fillId: string;
+  label: string;
+}
+
+export type WallBlock = BoardBlock | StructureBlock | OrphanInsulationBlock;
 
 export interface WallSectionModel {
   blocks: WallBlock[];
@@ -214,13 +227,30 @@ export function buildWallSectionModel(layers: LayerV2[]): WallSectionModel {
       continue;
     }
 
-    // Layer non disegnato (structure_guide solo, insulation senza struttura, screw, accessory, finish)
+    // Isolante orfano (= insulation NON adiacente a una struttura): lo emettiamo
+    // come OrphanInsulationBlock con warning visivo, invece di scartarlo silenzio­
+    // samente come prima. Così l'utente capisce che è fuori posto.
+    if (cat === 'insulation') {
+      const cls = classifyMaterial(l);
+      blocks.push({
+        kind: 'orphan_insulation',
+        layer: l,
+        depthMm: Number(l.thickness) || 0,
+        fillId: cls.fillId,
+        label: cls.label,
+      });
+      i++;
+      continue;
+    }
+
+    // Layer non disegnato (structure_guide solo, screw, accessory, finish)
     // → lo skippiamo nel modello visuale, ma è comunque presente nei calcoli costi/legenda.
     i++;
   }
 
   const totalThicknessMm = blocks.reduce((sum, b) => {
-    return sum + (b.kind === 'board' ? b.thicknessMm : b.depthMm);
+    if (b.kind === 'board') return sum + b.thicknessMm;
+    return sum + b.depthMm;
   }, 0);
 
   return {
@@ -264,7 +294,11 @@ export function generateWallTitle(model: WallSectionModel, typology: 'partition'
   if (isLining) return hasInsulation ? 'Controparete isolata' : 'Controparete';
 
   if (isPartition) {
-    if (isDouble) return 'Parete a doppia orditura';
+    if (isDouble) {
+      if (hasFireBoard) return 'Parete REI a doppia orditura';
+      if (hasInsulation) return 'Parete acustica a doppia orditura';
+      return 'Parete a doppia orditura';
+    }
     if (hasFireBoard && hasInsulation) return 'Parete REI ad alte prestazioni';
     if (hasFireBoard) return 'Parete REI con lastra ignifuga';
     if (hasHydroBoard) return 'Parete idrofuga per ambienti umidi';

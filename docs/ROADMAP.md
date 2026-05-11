@@ -121,7 +121,37 @@ Pagamento: **Stripe** o **Lemon Squeezy** (decisione in Fase 1, dopo apertura P.
 
 ## Stato corrente
 
-**Fase 0** in corso. Ultimo step completato: clone fresco da GitHub + dipendenze installate + app funzionante in locale con DB reale. Prossimo step: documentazione (questo file) + setup git nuovo repo + branch Supabase.
+**Configuratore V2** completato + parità funzionale con V1:
+- Lista stratigrafie con search + filtri tecnici (fire/acoustic/spessore/fornitore)
+- Wizard 3-vie ingresso (Cerca / Da catalogo certificato / Crea da zero)
+- Builder con 5 tab: Sezione · Vista 3D placeholder · Pianta · Costi · Tecnico
+- Tab Costi: breakdown stile fattura con tempi posa + viti + manodopera
+- Tab Tecnico: scheda con voce di capitolato + export PDF (jspdf + raster SVG)
+- Tab Sezione: export PNG
+- Vista comparativa 3 stratigrafie affiancate
+- AddToEstimateDialog (area, finishLevel Q1-Q4, altezza)
+- EstimateContextBanner quando configuratore aperto da preventivo
+- Route swap: V2 ora su `/configurator`, V1 legacy su `/configurator-legacy`
+- Adapter param V1→V2 trasparente (nessun navigate da modificare)
+
+**Polish tecnico**:
+- Code splitting via manualChunks (bundle index 2.5MB → 738KB, -70%)
+- Vendor chunk separati: pdf, xlsx, radix, supabase, tanstack, dnd, charts, icons
+- SEO base (og-tags, twitter card, robots.txt)
+- OrgBadge → Org switcher dropdown quando si è in più organization
+
+**Fasi rimanenti**:
+- 0.4 Form stratigrafia certificata V2 (sezioni acoustic/fire/curvature/breakResistance/supplier)
+- 0.5 Catalogo stratigrafie certificate seedate (Knauf W11x, Gyproc, Siniat, Fassa, Rigips)
+- Vista 3D Three.js fotorealistica (#84)
+- Calcoli tecnici reali EI/Rw/λ (oggi placeholder)
+- Storage Supabase allegati listini (PDF condizioni, Excel originali)
+- Importer Knauf + Fassa Bortolo
+- Test E2E Playwright + unit coverage
+- PWA + layout mobile completo
+- Sentry + backup DB automatici
+- Deploy Vercel + dominio
+- Stripe / billing / paywall + email transazionali + landing pubblica
 
 Per task granulari attive in chat, usa `TaskList`.
 

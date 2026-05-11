@@ -1,14 +1,12 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
-
 User-agent: *
 Allow: /
+
+# Aree autenticate: i bot non possono comunque vederle, ma esplicitiamo
+Disallow: /auth
+Disallow: /admin
+Disallow: /profile
+Disallow: /settings
+Disallow: /members
+
+# Sitemap (verrà popolata quando avremo dominio + landing pubblica)
+# Sitemap: https://dryconfig.it/sitemap.xml

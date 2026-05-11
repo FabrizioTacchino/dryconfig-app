@@ -35,23 +35,39 @@ export function generateSystemCode({ typology, layers, rw, ei }: SystemCodeInput
 
   const prefix = typology === 'partition' ? 'W' : typology === 'lining' ? 'LIN' : 'D';
 
-  // Trova la struttura principale (primo structure_frame)
-  const structureIdx = layers.findIndex(l => l.material?.category === 'structure_frame');
-  const structure = structureIdx >= 0 ? layers[structureIdx] : null;
-  const structureWidth = structure?.material?.width ?? null;
+  // Trova TUTTE le strutture (per distinguere singola da doppia orditura)
+  const structureIndices = layers
+    .map((l, i) => (l.material?.category === 'structure_frame' ? i : -1))
+    .filter(i => i >= 0);
+  const isDoubleStruct = structureIndices.length >= 2;
+  const firstStructIdx = structureIndices[0] ?? -1;
+  const lastStructIdx = structureIndices[structureIndices.length - 1] ?? -1;
 
-  // Conta lastre prima e dopo la struttura
+  // Larghezze montanti (somma o singolo)
+  const structureWidths = structureIndices.map(i => Number(layers[i].material?.width) || 0);
+
+  // Conta lastre lato A (prima della prima struttura) e lato B (dopo l'ultima)
   let boardsA = 0;
   let boardsB = 0;
   layers.forEach((l, i) => {
     if (l.material?.category !== 'board') return;
-    if (structureIdx === -1 || i < structureIdx) boardsA++;
-    else boardsB++;
+    if (firstStructIdx === -1 || i < firstStructIdx) boardsA++;
+    else if (i > lastStructIdx) boardsB++;
+    // boards in mezzo a doppia struttura (raro): non contate qui
   });
 
-  // Famiglia: 11 (singola orditura) — distinguiamo solo dal numero di lastre per ora.
-  // Doppia orditura (W115/W118) detectabile da 2+ structure_frame: futuro.
-  const family = boardsA + boardsB > 0 ? `1${Math.min(2, Math.max(boardsA, boardsB))}` : '11';
+  // Famiglia stile Knauf:
+  //  - W111 = 1+1 lastra, singola orditura
+  //  - W112 = 2+2 lastre, singola orditura
+  //  - W115 = 2+2 lastre, doppia orditura (W115)
+  //  - W118 = 3+3 lastre, doppia orditura
+  let family: string;
+  if (isDoubleStruct) {
+    if (boardsA >= 3 && boardsB >= 3) family = '118';
+    else family = '115';
+  } else {
+    family = boardsA + boardsB > 0 ? `1${Math.min(2, Math.max(boardsA, boardsB))}` : '11';
+  }
 
   const parts: string[] = [`DC-${prefix}${family}`];
 
@@ -61,8 +77,9 @@ export function generateSystemCode({ typology, layers, rw, ei }: SystemCodeInput
     parts.push(`${boardsA + boardsB}L`);
   }
 
-  if (structureWidth) {
-    parts.push(String(Math.round(Number(structureWidth))));
+  if (structureWidths.length > 0) {
+    // Singola: "75". Doppia: "75+75" (o "75+50" se diverse).
+    parts.push(structureWidths.map(w => Math.round(w)).join('+'));
   }
 
   if (typeof rw === 'number' && rw > 0) parts.push(`RW${Math.round(rw)}`);

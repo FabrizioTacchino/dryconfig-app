@@ -34,6 +34,44 @@ interface SaveStratigraphyData {
   totalThickness: number;
   estimatedCost: number;
   weightPerSqm: number;
+  /** Interasse montanti in mm (400 o 600). Default 600. */
+  studSpacingMm?: number;
+  /** Flag stratigrafia certificata (default false). Se true, popola anche i campi sotto. */
+  isCertified?: boolean;
+  /** Codice del test report / certificato di sistema. */
+  certificationCode?: string | null;
+  /** Laboratorio o ente certificatore. */
+  certificationLab?: string | null;
+  /** Data del test (ISO YYYY-MM-DD). */
+  certificationDate?: string | null;
+  /** Note tecniche o link al fascicolo originale. */
+  certificationNotes?: string | null;
+  /** Rw misurato dB (sostituisce calcolato). */
+  acousticPerformance?: number | null;
+  /** Correttore C (rumore rosa). */
+  acousticRwC?: number | null;
+  /** Correttore Ctr (traffico). */
+  acousticRwCtr?: number | null;
+  /** Norma test acustica (es. "UNI EN ISO 10140-2"). */
+  acousticTestNorm?: string | null;
+  /** EI/REI misurato (es. "EI 60"). */
+  fireResistanceClass?: string | null;
+  /** Reazione al fuoco lastre (Euroclasse). */
+  fireReactionClass?: string | null;
+  /** Norma test resistenza fuoco (es. "EN 1364-1"). */
+  fireTestNorm?: string | null;
+  /** λ misurato W/mK. */
+  thermalPerformance?: number | null;
+  /** U globale parete W/m²K. */
+  thermalUValue?: number | null;
+  /** R globale m²K/W. */
+  thermalRValue?: number | null;
+  /** Altezza massima parete certificata (m). */
+  mechanicalMaxHeightM?: number | null;
+  /** Carico ammissibile parete (N/m²). */
+  mechanicalLoadNSqm?: number | null;
+  /** Carico massimo sospendibile (kg per punto). */
+  mechanicalSuspendableLoadKg?: number | null;
 }
 
 export const useIntegratedStratigraphySave = () => {
@@ -158,14 +196,22 @@ export const useIntegratedStratigraphySave = () => {
       const dbWallType = mapWallTypeToDatabase(data.type);
 
       // 🏗️ STEP 2: SALVA LA STRATIGRAFIA CON I TOTALI IDENTICI AL PREVIEW
+      // Per stratigrafie certificate, peso/Rw/EI/λ sono i valori MISURATI dal
+      // test, non quelli calcolati a partire dai materiali. Se l'utente ha
+      // valorizzato i campi certificazione, li uso al posto dei calcolati.
+      const isCertified = !!data.isCertified;
+      const certifiedWeight = isCertified && data.weightPerSqm != null
+        ? Math.round(Number(data.weightPerSqm) * 100) / 100
+        : Math.round(data.weightPerSqm * 100) / 100;
+
       const stratigraphyData = {
         name: data.name,
         description: data.description,
         type: dbWallType,
-        is_certified: false,
+        is_certified: isCertified,
         user_id: user.id,
         total_thickness: Math.round(data.totalThickness * 10) / 10,
-        weight_per_sqm: Math.round(data.weightPerSqm * 100) / 100,
+        weight_per_sqm: certifiedWeight,
         // 💰 SALVA I TOTALI IDENTICI AL PREVIEW
         material_cost_per_sqm: finalTotals.materialCost,
         screw_cost_per_sqm: finalTotals.screwCost,
@@ -173,7 +219,26 @@ export const useIntegratedStratigraphySave = () => {
         comprehensive_cost_per_sqm: finalTotals.comprehensiveCost,
         installation_time_per_sqm: finalTotals.installationTime,
         cost_per_sqm: finalTotals.comprehensiveCost, // Legacy field per compatibilità
-      };
+        ...(data.studSpacingMm != null ? { stud_spacing_mm: data.studSpacingMm } : {}),
+        // Metadati certificazione (popolati solo se l'utente li valorizza)
+        ...(data.certificationCode !== undefined ? { certification_code: data.certificationCode } : {}),
+        ...(data.certificationLab !== undefined ? { certification_lab: data.certificationLab } : {}),
+        ...(data.certificationDate !== undefined ? { certification_date: data.certificationDate } : {}),
+        ...(data.certificationNotes !== undefined ? { certification_notes: data.certificationNotes } : {}),
+        ...(data.acousticPerformance !== undefined ? { acoustic_performance: data.acousticPerformance } : {}),
+        ...(data.acousticRwC !== undefined ? { acoustic_rw_c_correction: data.acousticRwC } : {}),
+        ...(data.acousticRwCtr !== undefined ? { acoustic_rw_ctr_correction: data.acousticRwCtr } : {}),
+        ...(data.acousticTestNorm !== undefined ? { acoustic_test_norm: data.acousticTestNorm } : {}),
+        ...(data.fireResistanceClass !== undefined ? { fire_resistance_class: data.fireResistanceClass } : {}),
+        ...(data.fireReactionClass !== undefined ? { fire_reaction_class: data.fireReactionClass } : {}),
+        ...(data.fireTestNorm !== undefined ? { fire_test_norm: data.fireTestNorm } : {}),
+        ...(data.thermalPerformance !== undefined ? { thermal_performance: data.thermalPerformance } : {}),
+        ...(data.thermalUValue !== undefined ? { thermal_u_value: data.thermalUValue } : {}),
+        ...(data.thermalRValue !== undefined ? { thermal_r_value: data.thermalRValue } : {}),
+        ...(data.mechanicalMaxHeightM !== undefined ? { mechanical_max_height_m: data.mechanicalMaxHeightM } : {}),
+        ...(data.mechanicalLoadNSqm !== undefined ? { mechanical_load_n_sqm: data.mechanicalLoadNSqm } : {}),
+        ...(data.mechanicalSuspendableLoadKg !== undefined ? { mechanical_suspendable_load_kg: data.mechanicalSuspendableLoadKg } : {}),
+      } as Record<string, unknown>;
 
       let stratigraphy;
 
@@ -287,15 +352,19 @@ export const useIntegratedStratigraphySave = () => {
     },
     onSuccess: (stratigraphy, variables) => {
       const isUpdate = !!variables.id;
-      console.log('🎊 [SUCCESS] ARROTONDAMENTO CORRETTO - PREVIEW E SALVATAGGIO IDENTICI!', isUpdate ? 'UPDATE' : 'CREATE');
-      toast.success(`Stratigrafia "${stratigraphy.name}" ${isUpdate ? 'aggiornata' : 'salvata'} con successo! 
-        📊 Tempo: ${stratigraphy.installation_time_per_sqm} min
-        💰 Manodopera: €${stratigraphy.labor_cost_per_sqm}
-        🎯 Totale: €${stratigraphy.comprehensive_cost_per_sqm}/m²`);
-      
+      const verb = isUpdate ? 'aggiornata' : 'salvata';
+      toast.success(`Stratigrafia "${stratigraphy.name}" ${verb}`, {
+        description: `€${Number(stratigraphy.comprehensive_cost_per_sqm ?? 0).toFixed(2)}/m² · ${Number(stratigraphy.installation_time_per_sqm ?? 0).toFixed(1)} min/m²`,
+      });
+
       queryClient.invalidateQueries({ queryKey: ['stratigraphies'] });
       queryClient.invalidateQueries({ queryKey: ['stratigraphy', variables.id] });
       queryClient.invalidateQueries({ queryKey: ['unified-stratigraphies'] });
+      // Match certificate: la lista delle certificate dell'org è cached con
+      // staleTime 10min — invalida così il banner di match incrocia anche la
+      // stratigrafia appena salvata (sia certificata che no, perché potrebbe
+      // aver cambiato il flag is_certified su un update).
+      queryClient.invalidateQueries({ queryKey: ['certified-stratigraphies'] });
     },
     onError: (error) => {
       console.error('💥 [ERROR]:', error);

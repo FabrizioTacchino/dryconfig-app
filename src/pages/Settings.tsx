@@ -15,6 +15,9 @@ import { toast } from 'sonner';
 import { Settings as SettingsIcon, Bell, Shield, Palette } from 'lucide-react';
 import { createNotification } from '@/utils/notificationUtils';
 import BackButton from '@/components/layout/BackButton';
+import WasteFactorsCard from '@/components/settings/WasteFactorsCard';
+import FinishLevelsCard from '@/components/settings/FinishLevelsCard';
+import ScrewPreferencesCard from '@/components/settings/ScrewPreferencesCard';
 
 const Settings = () => {
   const { user } = useAuth();
@@ -170,6 +173,12 @@ const Settings = () => {
                   </div>
                 </CardContent>
               </Card>
+
+              <WasteFactorsCard />
+
+              <FinishLevelsCard />
+
+              <ScrewPreferencesCard />
 
               <Card>
                 <CardHeader>

@@ -18,6 +18,7 @@ import {
 import { useMaterials, type DatabaseMaterial, type MaterialCategory } from '@/hooks/useMaterials';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
+import { groupByFormat, type MaterialGroup } from './dedupByFormat';
 
 const CATEGORY_TABS: { value: MaterialCategory | 'all'; label: string }[] = [
   { value: 'all', label: 'Tutti' },
@@ -104,43 +105,49 @@ const MaterialPickerDialog: React.FC<MaterialPickerDialogProps> = ({
     return allMaterials.filter(m => !m.supplier || visibleSuppliers.includes(m.supplier));
   }, [allMaterials, visibleSuppliers]);
 
-  // Pool per category attivo (per count fornitori dinamico)
+  // Dedup per formato: 4 codici "Wallboard 10" diversi solo per length → 1 sola card.
+  const groupedBase = useMemo<MaterialGroup[]>(
+    () => groupByFormat(baseMaterials),
+    [baseMaterials],
+  );
+
+  // Pool per category attivo (per count fornitori dinamico) — su gruppi.
   const poolByCategory = useMemo(() => {
-    if (activeCategory === 'all') return baseMaterials;
-    return baseMaterials.filter(m => m.category === activeCategory);
-  }, [baseMaterials, activeCategory]);
+    if (activeCategory === 'all') return groupedBase;
+    return groupedBase.filter(g => g.representative.category === activeCategory);
+  }, [groupedBase, activeCategory]);
 
-  // Pool per supplier attivo (per count categorie dinamico)
+  // Pool per supplier attivo (per count categorie dinamico) — su gruppi.
   const poolBySupplier = useMemo(() => {
-    if (activeSupplier === 'all') return baseMaterials;
-    return baseMaterials.filter(m => m.supplier === activeSupplier);
-  }, [baseMaterials, activeSupplier]);
+    if (activeSupplier === 'all') return groupedBase;
+    return groupedBase.filter(g => g.representative.supplier === activeSupplier);
+  }, [groupedBase, activeSupplier]);
 
-  // Filtrati = intersezione categoria + fornitore + tipologia
+  // Filtrati = intersezione categoria + fornitore + tipologia (su gruppi)
   const filtered = useMemo(() => {
-    let arr = baseMaterials;
-    if (activeCategory !== 'all') arr = arr.filter(m => m.category === activeCategory);
-    if (activeSupplier !== 'all') arr = arr.filter(m => m.supplier === activeSupplier);
+    let arr = groupedBase;
+    if (activeCategory !== 'all') arr = arr.filter(g => g.representative.category === activeCategory);
+    if (activeSupplier !== 'all') arr = arr.filter(g => g.representative.supplier === activeSupplier);
     if (activeCategory === 'board' && activeTypology !== 'all') {
       const chip = BOARD_TYPOLOGY_CHIPS.find(c => c.key === activeTypology);
-      if (chip) arr = arr.filter(chip.matches);
+      if (chip) arr = arr.filter(g => chip.matches(g.representative));
     }
     return arr;
-  }, [baseMaterials, activeCategory, activeSupplier, activeTypology]);
+  }, [groupedBase, activeCategory, activeSupplier, activeTypology]);
 
   // Ordinamento (cmdk applica già rilevanza per fuzzy sopra al sort esplicito)
-  const sorted = useMemo(() => {
+  const sorted = useMemo<MaterialGroup[]>(() => {
     if (sortBy === 'relevance') return filtered;
     const arr = [...filtered];
-    const priceOf = (m: DatabaseMaterial) => Number(m.net_price ?? m.unit_price ?? 0);
-    const thickOf = (m: DatabaseMaterial) => Number(m.thickness ?? 0);
+    const priceOf = (g: MaterialGroup) => Number(g.representative.net_price ?? g.representative.unit_price ?? 0);
+    const thickOf = (g: MaterialGroup) => Number(g.representative.thickness ?? 0);
     arr.sort((a, b) => {
       switch (sortBy) {
         case 'price_asc':      return priceOf(a) - priceOf(b);
         case 'price_desc':     return priceOf(b) - priceOf(a);
         case 'thickness_asc':  return thickOf(a) - thickOf(b);
         case 'thickness_desc': return thickOf(b) - thickOf(a);
-        case 'name':           return (a.name ?? '').localeCompare(b.name ?? '');
+        case 'name':           return (a.representative.name ?? '').localeCompare(b.representative.name ?? '');
         default: return 0;
       }
     });
@@ -168,7 +175,7 @@ const MaterialPickerDialog: React.FC<MaterialPickerDialogProps> = ({
           {CATEGORY_TABS.map(tab => {
             const count = tab.value === 'all'
               ? poolBySupplier.length
-              : poolBySupplier.filter(m => m.category === tab.value).length;
+              : poolBySupplier.filter(g => g.representative.category === tab.value).length;
             return (
               <Button
                 key={tab.value}
@@ -200,7 +207,7 @@ const MaterialPickerDialog: React.FC<MaterialPickerDialogProps> = ({
               Tutte
             </Button>
             {BOARD_TYPOLOGY_CHIPS.map(chip => {
-              const count = poolBySupplier.filter(m => m.category === 'board' && chip.matches(m)).length;
+              const count = poolBySupplier.filter(g => g.representative.category === 'board' && chip.matches(g.representative)).length;
               if (count === 0) return null;
               return (
                 <Button
@@ -229,7 +236,7 @@ const MaterialPickerDialog: React.FC<MaterialPickerDialogProps> = ({
                 Tutti <span className="opacity-70">({poolByCategory.length})</span>
               </button>
               {visibleSuppliers.map(s => {
-                const count = poolByCategory.filter(m => m.supplier === s).length;
+                const count = poolByCategory.filter(g => g.representative.supplier === s).length;
                 if (count === 0) return null; // nasconde se 0 nella categoria attiva
                 return (
                   <button
@@ -278,11 +285,15 @@ const MaterialPickerDialog: React.FC<MaterialPickerDialogProps> = ({
                 {isLoading && <div className="p-4 text-center text-sm text-muted-foreground">Caricamento…</div>}
                 <CommandEmpty>Nessun materiale trovato.</CommandEmpty>
                 <CommandGroup>
-                  {sorted.map(m => {
+                  {sorted.map(group => {
+                    const m = group.representative;
                     const netPrice = m.net_price ?? m.unit_price ?? 0;
                     const listPrice = m.list_price ?? netPrice;
                     const isDiscounted = listPrice > netPrice + 0.001;
-                    const searchValue = `${m.code} ${m.name} ${m.supplier} ${m.material_type ?? ''} ${m.family_code ?? ''}`;
+                    // searchValue include i codici di TUTTE le varianti, così la ricerca per
+                    // codice (es. "5200615968") matcha comunque anche se mostriamo il representative.
+                    const allCodes = group.variants.map(v => v.code).join(' ');
+                    const searchValue = `${allCodes} ${m.name} ${m.supplier} ${m.material_type ?? ''} ${(m as any).family_code ?? ''}`;
                     return (
                       <CommandItem
                         key={m.id}
@@ -304,6 +315,12 @@ const MaterialPickerDialog: React.FC<MaterialPickerDialogProps> = ({
                               <span>· sez. {m.width} mm</span>
                             )}
                           </div>
+                          {group.variants.length > 1 && group.formats.length > 0 && (
+                            <div className="text-[10px] text-muted-foreground/80 mt-0.5">
+                              <span className="font-medium">Formati:</span> {group.formats.join(' · ')}
+                              <span className="ml-1 opacity-60">({group.variants.length} cod.)</span>
+                            </div>
+                          )}
                         </div>
                         <div className="text-right shrink-0">
                           <div className="font-medium text-sm text-green-700">
