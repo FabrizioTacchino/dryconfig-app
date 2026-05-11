@@ -19,7 +19,10 @@ import {
 } from '@/hooks/useTeamManagement';
 import { useCurrentOrganization } from '@/contexts/OrganizationContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useHasFeature, useOrgPlan } from '@/hooks/useOrgPlan';
 import BackButton from '@/components/layout/BackButton';
+import { Link } from 'react-router-dom';
+import { Crown } from 'lucide-react';
 
 const ROLE_OPTIONS: { value: OrganizationRole; label: string; description: string }[] = [
   { value: 'owner',      label: 'Titolare',       description: 'Pieni poteri, gestione billing ed eliminazione organizzazione' },
@@ -33,6 +36,8 @@ const Members: React.FC = () => {
   const { user } = useAuth();
   const { currentRole, currentOrganization } = useCurrentOrganization();
   const canManage = currentRole === 'owner' || currentRole === 'admin';
+  const hasMembersFeature = useHasFeature('members');
+  const plan = useOrgPlan();
 
   const { data: members = [], isLoading: loadingMembers } = useOrganizationMembers();
   const { data: invitations = [], isLoading: loadingInvites } = useOrganizationInvitations();
@@ -78,6 +83,40 @@ const Members: React.FC = () => {
     return (
       <div className="container mx-auto p-6">
         <p className="text-muted-foreground">Nessuna organizzazione attiva.</p>
+      </div>
+    );
+  }
+
+  // Feature-gate piano: la gestione team multi-utente è inclusa solo nel piano Team.
+  // Trial vede l'anteprima completa; Solo/Studio vedono solo l'upsell.
+  if (!hasMembersFeature) {
+    return (
+      <div className="container mx-auto p-6 space-y-6">
+        <BackButton />
+        <Card className="max-w-2xl border-primary/20 bg-primary/5">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <Crown className="h-6 w-6 text-primary" />
+              <CardTitle>Gestione team (piano Team)</CardTitle>
+            </div>
+            <CardDescription>
+              Il tuo piano attuale è <strong>{plan.label}</strong>. La gestione di più utenti con
+              ruoli avanzati è inclusa nel piano <strong>Team €149/mese</strong>: 10 utenti, ruoli
+              owner/admin/supervisor/technician/viewer, audit log, e supporto prioritario.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ul className="text-sm space-y-1 text-muted-foreground">
+              <li>• Inviti illimitati al team</li>
+              <li>• 5 ruoli con permessi granulari (chi crea, chi elimina, chi solo guarda)</li>
+              <li>• Multi-organizzazione (più cantieri/sedi separate)</li>
+              <li>• Supporto prioritario via email + telefono</li>
+            </ul>
+            <Button asChild>
+              <Link to="/settings">Vai a Impostazioni → Piano (a breve)</Link>
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
