@@ -132,20 +132,19 @@ export const useDashboardData = (period: DashboardPeriod = '6m') => {
   const { user } = useAuth();
   const { projects, isLoading: projectsLoading } = useProjects();
 
-  // Fetch comprehensive estimate data (include F30 timestamps + customer_id via projects)
+  // Fetch comprehensive estimate data.
+  // BUG-FIX (post F16): qui prima rifacevamo `projects WHERE user_id = user.id`
+  // bypassando la logica org-based di useProjects. Se l'utente era in
+  // un'organizzazione, i progetti veri (filtrati per organization_id) NON
+  // venivano trovati → estimatesData vuoto → dashboard piatta.
+  // Ora prendiamo i project IDs direttamente da `projects` (caricato sopra
+  // con la logica corretta). Niente seconda query DB e niente discrepanze.
+  const projectIdsKey = projects.map(p => p.id).sort().join(',');
   const { data: estimatesData = [], isLoading: estimatesLoading } = useQuery({
-    queryKey: ['dashboard-estimates-comprehensive', user?.id],
+    queryKey: ['dashboard-estimates-comprehensive', user?.id, projectIdsKey],
     queryFn: async () => {
-      if (!user) return [];
-
-      const { data: userProjects } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('user_id', user.id);
-
-      if (!userProjects?.length) return [];
-
-      const projectIds = userProjects.map(p => p.id);
+      if (!user || projects.length === 0) return [];
+      const projectIds = projects.map(p => p.id);
 
       const { data, error } = await supabase
         .from('estimates')
@@ -166,7 +165,7 @@ export const useDashboardData = (period: DashboardPeriod = '6m') => {
 
       return data || [];
     },
-    enabled: !!user,
+    enabled: !!user && projects.length > 0,
   });
 
   // F24: customers per top-clienti
