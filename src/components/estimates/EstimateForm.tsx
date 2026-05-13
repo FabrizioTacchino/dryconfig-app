@@ -56,9 +56,9 @@ const EstimateForm = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="draft">Bozza</SelectItem>
-                    <SelectItem value="pending">In approvazione</SelectItem>
-                    <SelectItem value="approved">Approvato</SelectItem>
-                    <SelectItem value="contracted">Contrattualizzato</SelectItem>
+                    <SelectItem value="sent">Inviato</SelectItem>
+                    <SelectItem value="won">Vinto</SelectItem>
+                    <SelectItem value="lost">Perso</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

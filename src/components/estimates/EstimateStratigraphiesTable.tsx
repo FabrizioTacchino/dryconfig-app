@@ -14,6 +14,7 @@ import ReconnectStratigraphyDialog from './ReconnectStratigraphyDialog';
 import SnapshotViewerDialog from './SnapshotViewerDialog';
 import { EstimateStratigraphySortField, SortDirection } from '@/hooks/useEstimateStratigraphiesSorting';
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { isEstimateLocked } from '@/utils/estimates/estimateLock';
 
 interface EstimateStratigraphiesTableProps {
   stratigraphies: (EstimateStratigraphy & { stratigraphy?: any })[];
@@ -55,7 +56,7 @@ const EstimateStratigraphiesTable = ({
     (EstimateStratigraphy & { stratigraphy?: any }) | null
   >(null);
 
-  const canEdit = estimateStatus !== 'contracted';
+  const canEdit = !isEstimateLocked(estimateStatus);
 
   const handleStartEdit = (stratigraphy: EstimateStratigraphy) => {
     setEditingId(stratigraphy.id);

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Estimate } from '@/types';
+import { Estimate, LostReason } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCurrentOrganization } from '@/contexts/OrganizationContext';
 import { toast } from 'sonner';
@@ -147,16 +147,41 @@ export const useEstimates = (projectId?: string) => {
   });
 
   const updateEstimateStatusMutation = useMutation({
-    mutationFn: async ({ estimateId, status }: { estimateId: string; status: Estimate['status'] }) => {
+    mutationFn: async ({
+      estimateId,
+      status,
+      lostReason,
+    }: {
+      estimateId: string;
+      status: Estimate['status'];
+      lostReason?: LostReason | null;
+    }) => {
       if (!user) throw new Error('User not authenticated');
+
+      // F30 — timeline workflow: scriviamo i timestamp solo all'ingresso del rispettivo
+      // stato. Tornare a draft pulisce won/lost ma NON sent_at (audit: il preventivo era
+      // già stato comunicato al cliente). lost_reason si resetta solo quando esci da lost.
+      const now = new Date().toISOString();
+      const patch: Record<string, unknown> = {
+        status,
+        updated_at: now,
+      };
+      if (status === 'sent') patch.sent_at = now;
+      if (status === 'won') patch.won_at = now;
+      if (status === 'lost') {
+        patch.lost_at = now;
+        patch.lost_reason = lostReason ?? null;
+      }
+      if (status === 'draft') {
+        patch.won_at = null;
+        patch.lost_at = null;
+        patch.lost_reason = null;
+      }
 
       // RLS org-based protegge: ogni membro dell'org può aggiornare i preventivi dell'org.
       const { data, error } = await supabase
         .from('estimates')
-        .update({
-          status,
-          updated_at: new Date().toISOString()
-        })
+        .update(patch)
         .eq('id', estimateId)
         .select()
         .single();
@@ -166,14 +191,21 @@ export const useEstimates = (projectId?: string) => {
         throw error;
       }
 
-      console.log('Estimate status updated successfully:', data);
       return data;
     },
-    onSuccess: (data) => {
-      // Invalidate tutte le query degli estimates per aggiornare l'interfaccia
+    onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['estimates'] });
-      toast.success('Stato del preventivo aggiornato!');
-      console.log('Status update successful, queries invalidated');
+      queryClient.invalidateQueries({ queryKey: ['estimate', vars.estimateId] });
+      const labels: Record<Estimate['status'], string> = {
+        draft: 'Preventivo riportato in bozza',
+        sent: 'Preventivo marcato come inviato',
+        won: 'Preventivo vinto! Lavoro confermato 🎉',
+        lost: 'Preventivo segnato come perso',
+        pending: 'Stato aggiornato',
+        approved: 'Stato aggiornato',
+        contracted: 'Stato aggiornato',
+      };
+      toast.success(labels[vars.status] ?? 'Stato aggiornato');
     },
     onError: (error) => {
       console.error('Error updating estimate status:', error);
@@ -190,9 +222,12 @@ export const useEstimates = (projectId?: string) => {
     error,
     createEstimate: createEstimateMutation.mutate,
     deleteEstimate: deleteEstimateMutation.mutate,
-    updateEstimateStatus: (estimateId: string, status: Estimate['status']) => {
-      console.log('Hook updateEstimateStatus called with:', { estimateId, status });
-      updateEstimateStatusMutation.mutate({ estimateId, status });
+    updateEstimateStatus: (
+      estimateId: string,
+      status: Estimate['status'],
+      lostReason?: LostReason | null,
+    ) => {
+      updateEstimateStatusMutation.mutate({ estimateId, status, lostReason });
     },
     isCreating: createEstimateMutation.isPending,
     isDeleting: deleteEstimateMutation.isPending,

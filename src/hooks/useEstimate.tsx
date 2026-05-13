@@ -71,6 +71,11 @@ export const useEstimate = (estimateId: string) => {
         offerNumberSeq: eData?.offer_number_seq ?? null,
         offerNumberYear: eData?.offer_number_year ?? null,
         offerIssuedAt: eData?.offer_issued_at ? new Date(eData.offer_issued_at) : null,
+        // F30 — workflow timeline
+        sentAt: eData?.sent_at ? new Date(eData.sent_at) : null,
+        wonAt: eData?.won_at ? new Date(eData.won_at) : null,
+        lostAt: eData?.lost_at ? new Date(eData.lost_at) : null,
+        lostReason: eData?.lost_reason ?? null,
         walls: [],
       } as unknown as Estimate;
     },

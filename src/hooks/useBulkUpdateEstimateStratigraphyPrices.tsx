@@ -100,8 +100,10 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
         .eq('id', estimateId)
         .single();
       if (estimateError) throw new Error('Preventivo non trovato');
-      if (estimateData.status === 'contracted') {
-        throw new Error('Impossibile aggiornare prezzi: preventivo contrattualizzato');
+      // F30: blocca se il preventivo è chiuso.
+      if (estimateData.status === 'won' || estimateData.status === 'lost' || estimateData.status === 'contracted') {
+        const label = estimateData.status === 'lost' ? 'perso' : 'vinto';
+        throw new Error(`Impossibile aggiornare prezzi: preventivo ${label}`);
       }
 
       const { data: projectData, error: projectError } = await supabase

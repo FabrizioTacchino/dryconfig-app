@@ -139,9 +139,10 @@ export const useCreateEstimateStratigraphy = () => {
         throw new Error('Preventivo non trovato');
       }
 
-      // Blocca se il preventivo è contrattualizzato
-      if (estimateData.status === 'contracted') {
-        throw new Error('Impossibile aggiungere stratigrafie: preventivo contrattualizzato');
+      // F30: blocca se il preventivo è vinto/perso (o legacy contracted).
+      if (estimateData.status === 'won' || estimateData.status === 'lost' || estimateData.status === 'contracted') {
+        const label = estimateData.status === 'lost' ? 'perso' : 'vinto/contrattualizzato';
+        throw new Error(`Impossibile aggiungere stratigrafie: preventivo ${label}`);
       }
 
       // Verifica che il progetto appartenga all'utente

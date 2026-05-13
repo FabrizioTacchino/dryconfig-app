@@ -41,18 +41,26 @@ const EstimateCard = ({ estimate, onDelete, onConfigure, onManage, onStatusChang
   const { estimateStratigraphies } = useEstimateStratigraphies(estimate.id);
   const { duplicateEstimate, isDuplicating } = useEstimates(estimate.projectId);
 
-  const statusColors = {
+  // F30 — workflow Bozza/Inviato/Vinto/Perso. I valori pending/approved/contracted
+  // sono legacy: vengono mappati sul colore corrispondente per coerenza visiva.
+  const statusColors: Record<string, string> = {
     draft: 'bg-gray-100 text-gray-800 border-gray-200',
-    pending: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-    approved: 'bg-green-100 text-green-800 border-green-200',
-    contracted: 'bg-blue-100 text-blue-800 border-blue-200',
+    sent: 'bg-amber-100 text-amber-800 border-amber-200',
+    won: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    lost: 'bg-red-100 text-red-800 border-red-200',
+    pending: 'bg-amber-100 text-amber-800 border-amber-200',
+    approved: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    contracted: 'bg-emerald-100 text-emerald-800 border-emerald-200',
   };
 
-  const statusLabels = {
+  const statusLabels: Record<string, string> = {
     draft: 'Bozza',
-    pending: 'In Attesa',
-    approved: 'Approvato',
-    contracted: 'Contrattualizzato',
+    sent: 'Inviato',
+    won: 'Vinto',
+    lost: 'Perso',
+    pending: 'Inviato',
+    approved: 'Vinto',
+    contracted: 'Vinto',
   };
 
   const handleDeleteClick = () => {
@@ -110,14 +118,14 @@ const EstimateCard = ({ estimate, onDelete, onConfigure, onManage, onStatusChang
                 <DropdownMenuItem onClick={() => handleStatusChange('draft')}>
                   Bozza
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleStatusChange('pending')}>
-                  In Attesa
+                <DropdownMenuItem onClick={() => handleStatusChange('sent')}>
+                  Inviato
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleStatusChange('approved')}>
-                  Approvato
+                <DropdownMenuItem onClick={() => handleStatusChange('won')}>
+                  Vinto
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleStatusChange('contracted')}>
-                  Contrattualizzato
+                <DropdownMenuItem onClick={() => handleStatusChange('lost')}>
+                  Perso
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

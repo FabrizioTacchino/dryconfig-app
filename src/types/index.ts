@@ -11,7 +11,27 @@ export interface Project {
   updatedAt: Date;
 }
 
-export type EstimateStatus = 'draft' | 'pending' | 'approved' | 'contracted';
+/**
+ * Stati preventivo (F30).
+ *
+ * Workflow attuale: draft → sent → (won | lost).
+ *
+ * I valori `pending`, `approved`, `contracted` sono LEGACY mantenuti
+ * nell'enum DB solo per backwards-compat finché non concludiamo la
+ * migrazione. Backfill su DB già applicato (pending → sent,
+ * approved+contracted → won), nessun nuovo record viene scritto coi
+ * vecchi valori dall'app.
+ */
+export type EstimateStatus =
+  | 'draft'   // Bozza (in lavorazione)
+  | 'sent'    // Inviato al cliente, in attesa
+  | 'won'     // Cliente ha accettato, lavoro confermato
+  | 'lost'    // Cliente non l'ha preso
+  // Legacy: NON usare nel nuovo codice, verranno rimossi
+  | 'pending' | 'approved' | 'contracted';
+
+/** Motivo di perdita (F30). Solo per status = 'lost'. */
+export type LostReason = 'price' | 'timing' | 'competitor' | 'no_response' | 'other';
 
 export interface Estimate {
   id: string;
@@ -24,8 +44,13 @@ export interface Estimate {
   createdAt: Date;
   updatedAt: Date;
   walls: Wall[];
-  notes?: string; // <--- AGGIUNTO QUI
-  projectName?: string; // <--- AGGIUNTO PER MOSTRARE IL NOME PROGETTO
+  notes?: string;
+  projectName?: string;
+  // F30 — workflow timeline
+  sentAt?: Date | null;
+  wonAt?: Date | null;
+  lostAt?: Date | null;
+  lostReason?: LostReason | null;
 }
 
 // Wall and Stratigraphy Types

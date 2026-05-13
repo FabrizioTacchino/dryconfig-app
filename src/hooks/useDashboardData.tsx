@@ -122,19 +122,27 @@ export const useDashboardData = () => {
     const completedProjects = projects.filter(p => p.status === 'completed').length;
     const archivedProjects = projects.filter(p => p.status === 'archived').length;
 
-    // Estimate metrics
+    // F30 — Estimate metrics. Manteniamo i nomi storici delle props per
+    // retrocompat con la UI (EnhancedDashboardOverview legge pending/approved/
+    // contracted) ma mappiamo sui nuovi stati: pending = sent, approved = sent
+    // ancora aperto, contracted = won. I valori legacy DB-side vengono inclusi
+    // per non perdere i preventivi pre-F30.
     const draftEstimates = estimatesData.filter(e => e.status === 'draft').length;
-    const pendingEstimates = estimatesData.filter(e => e.status === 'pending').length;
+    const pendingEstimates = estimatesData.filter(
+      e => e.status === 'sent' || e.status === 'pending',
+    ).length;
     const approvedEstimates = estimatesData.filter(e => e.status === 'approved').length;
-    const contractedEstimates = estimatesData.filter(e => e.status === 'contracted').length;
+    const contractedEstimates = estimatesData.filter(
+      e => e.status === 'won' || e.status === 'contracted',
+    ).length;
 
     // Financial calculations
     const totalValue = estimatesData.reduce((sum, e) => sum + (e.total_amount || 0), 0);
     const contractedValue = estimatesData
-      .filter(e => e.status === 'contracted')
+      .filter(e => e.status === 'won' || e.status === 'contracted')
       .reduce((sum, e) => sum + (e.total_amount || 0), 0);
     const pendingValue = estimatesData
-      .filter(e => e.status === 'pending' || e.status === 'approved')
+      .filter(e => e.status === 'sent' || e.status === 'pending' || e.status === 'approved')
       .reduce((sum, e) => sum + (e.total_amount || 0), 0);
 
     // Materials and operational metrics

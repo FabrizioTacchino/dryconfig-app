@@ -13,6 +13,7 @@ import {
 } from '@/hooks/useBulkUpdateEstimateStratigraphyPrices';
 import { useEstimateStratigraphiesSorting, EstimateStratigraphySortField } from '@/hooks/useEstimateStratigraphiesSorting';
 import BulkUpdatePricesReportDialog from './BulkUpdatePricesReportDialog';
+import { isEstimateLocked, lockedStateLabel } from '@/utils/estimates/estimateLock';
 
 interface EstimateStratigraphiesSectionProps {
   stratigraphies: (EstimateStratigraphy & { stratigraphy?: any })[];
@@ -79,9 +80,10 @@ const EstimateStratigraphiesSection = ({
     }
   };
 
-  const isContracted = estimateStatus === 'contracted';
-  const canAddNew = !isContracted;
-  const canUpdateAllPrices = !isContracted;
+  const locked = isEstimateLocked(estimateStatus);
+  const lockedLabel = lockedStateLabel(estimateStatus);
+  const canAddNew = !locked;
+  const canUpdateAllPrices = !locked;
 
   const handleSortChange = (field: EstimateStratigraphySortField) => {
     setSort(field);
@@ -97,18 +99,18 @@ const EstimateStratigraphiesSection = ({
           <div>
             <CardTitle className="flex items-center gap-2">
               Stratigrafie del Preventivo
-              {isContracted && (
+              {locked && (
                 <Badge variant="destructive" className="flex items-center gap-1">
                   <Lock className="h-3 w-3" />
-                  CONTRATTUALIZZATO
+                  {lockedLabel.toUpperCase()} · BLOCCATO
                 </Badge>
               )}
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               Gestisci le stratigrafie associate a questo preventivo
-              {isContracted && (
+              {locked && (
                 <span className="block text-red-600 mt-1 font-medium">
-                  ⚠️ Preventivo contrattualizzato - modifiche non consentite
+                  ⚠️ Preventivo {lockedLabel.toLowerCase()} - modifiche non consentite. Per riaprirlo riportalo in bozza dall'header.
                 </span>
               )}
             </p>
@@ -118,7 +120,7 @@ const EstimateStratigraphiesSection = ({
               onClick={handleAddFromConfigurator} 
               className={`gap-2 ${!canAddNew ? 'cursor-not-allowed' : ''}`}
               disabled={!canAddNew}
-              title={canAddNew ? "Aggiungi nuove stratigrafie" : "Non consentito: preventivo contrattualizzato"}
+              title={canAddNew ? "Aggiungi nuove stratigrafie" : `Non consentito: preventivo ${lockedLabel.toLowerCase()}`}
             >
               {canAddNew ? (
                 <Plus className="h-4 w-4" />
@@ -133,7 +135,7 @@ const EstimateStratigraphiesSection = ({
                 className={`gap-2 ${canUpdateAllPrices ? 'bg-primary/90 hover:bg-primary text-primary-foreground' : ''}`}
                 variant="outline"
                 disabled={isBulkUpdating || !canUpdateAllPrices}
-                title={canUpdateAllPrices ? "Aggiorna tutti i prezzi delle stratigrafie snapshot" : "Non consentito: preventivo contrattualizzato"}
+                title={canUpdateAllPrices ? "Aggiorna tutti i prezzi delle stratigrafie snapshot" : `Non consentito: preventivo ${lockedLabel.toLowerCase()}`}
               >
                 {isBulkUpdating ? (
                   <Loader className="h-4 w-4 animate-spin" />
