@@ -31,6 +31,9 @@ docs/backups/
 # Local screenshots (UX debug, non committate)
 screenshot/
 
+# Temp file usato per messaggi di commit multiriga (cleanup via Remove-Item).
+.git-commit-msg.tmp
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
