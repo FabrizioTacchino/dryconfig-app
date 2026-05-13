@@ -81,10 +81,19 @@ function formatQty(item: MaterialSummaryItem): string {
   return `${formatted} ${unit}`;
 }
 
+function supplierKeyFromName(name: string | null | undefined): string {
+  return `name:${(name ?? '').trim().toLowerCase()}`;
+}
+
 /**
- * Raggruppa MaterialSummaryItem per supplierId e fetcha i dati supplier dal DB.
- * I materiali senza supplierId finiscono in un gruppo speciale "Non assegnato"
- * (caso edge: import legacy senza FK).
+ * Raggruppa MaterialSummaryItem per fornitore. Priorità:
+ *  1. `supplierId` (UUID dalla tabella suppliers) — caso standard
+ *  2. fallback su nome supplier testuale normalizzato — copre snapshot
+ *     pre-F31 e materiali con solo `supplier` testo legacy
+ *  3. 'unassigned' — caso edge totale (no UUID, no nome)
+ *
+ * Per le chiavi UUID poi fetcha i contatti del fornitore dalla tabella
+ * `suppliers` per popolare l'header di sezione con email/tel/web.
  */
 async function buildSupplierGroups(
   materials: MaterialSummaryItem[],
@@ -92,13 +101,22 @@ async function buildSupplierGroups(
   const groupsMap = new Map<string, SupplierGroup>();
 
   for (const item of materials) {
-    const key = item.supplierId ?? 'unassigned';
+    const supplierName = (item.supplier ?? '').trim();
+    let key: string;
+    if (item.supplierId) {
+      key = item.supplierId;
+    } else if (supplierName) {
+      key = supplierKeyFromName(supplierName);
+    } else {
+      key = 'unassigned';
+    }
+
     let g = groupsMap.get(key);
     if (!g) {
       g = {
         key,
         supplier: null,
-        displayName: item.supplier || 'Fornitore non specificato',
+        displayName: supplierName || 'Fornitore non specificato',
         items: [],
         totalCost: 0,
       };
@@ -108,8 +126,10 @@ async function buildSupplierGroups(
     g.totalCost += num(item.totalCost);
   }
 
-  // Fetch dati supplier per le chiavi UUID
-  const supplierIds = Array.from(groupsMap.keys()).filter(k => k !== 'unassigned');
+  // Fetch dati supplier per le chiavi UUID (le altre sono fallback testuali).
+  const supplierIds = Array.from(groupsMap.keys()).filter(
+    k => k !== 'unassigned' && !k.startsWith('name:'),
+  );
   if (supplierIds.length > 0) {
     const { data: suppliers, error } = await supabase
       .from('suppliers')
@@ -130,7 +150,7 @@ async function buildSupplierGroups(
     }
   }
 
-  // Ordina: prima i fornitori con più totale (Saint-Gobain top), unassigned in fondo
+  // Ordina: prima i fornitori con più totale, unassigned sempre in fondo.
   return Array.from(groupsMap.values()).sort((a, b) => {
     if (a.key === 'unassigned') return 1;
     if (b.key === 'unassigned') return -1;
