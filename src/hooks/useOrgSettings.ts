@@ -9,6 +9,7 @@ import { toast } from 'sonner';
  * di F22.
  */
 export interface OrgSettings {
+  // ====== Anagrafica & branding (F22) ======
   /** Public URL del logo (Supabase Storage bucket org-logos). */
   logo_url?: string;
   /** Ragione sociale completa (es. "Impresa B4T S.r.l."). Usata in RDA. */
@@ -27,7 +28,74 @@ export interface OrgSettings {
   email?: string;
   /** Sito web. */
   website?: string;
+
+  // ====== Pricing engine (F23) ======
+  /** Mark-up % sui materiali (default 25). */
+  markup_materials_pct?: number;
+  /** Mark-up % sulla manodopera (default 70). */
+  markup_labor_pct?: number;
+  /** Mark-up % sulla finitura (default 30). */
+  markup_finish_pct?: number;
+  /** Spese generali % sul costo totale (default 10). */
+  overhead_pct?: number;
+  /** Sicurezza/DPI/ponteggi % sul costo totale (default 0). */
+  safety_pct?: number;
+  /** Trasporto materiali a cantiere forfait € (default 0). */
+  transport_flat?: number;
+  /** Smaltimento rifiuti forfait € (default 0). */
+  disposal_flat?: number;
+  /** Sconto cliente default % applicato dopo i mark-up (default 0). */
+  default_customer_discount_pct?: number;
+
+  // ====== IVA & validità (F27) ======
+  /** IVA default % (default 22, alcune ristrutturazioni 10). */
+  iva_pct?: number;
+  /** Validità offerta in giorni (default 30). */
+  offer_validity_days?: number;
+  /** Acconto richiesto all'ordine % (default 30). */
+  payment_advance_pct?: number;
+  /** Acconto a metà lavori % (default 40). */
+  payment_mid_pct?: number;
+  /** Saldo a fine lavori % (default 30). */
+  payment_balance_pct?: number;
+  /** Termini di consegna (testo libero). */
+  delivery_terms?: string;
+  /** Garanzia (testo libero). */
+  warranty_terms?: string;
+  /** Note legali / Termini & Condizioni del PDF (testo libero multi-riga). */
+  terms_text?: string;
+
+  // ====== Numerazione offerte (F25) ======
+  /** Prefisso numerazione offerte (es. "OFF" -> "OFF-2026/001"). */
+  offer_number_prefix?: string;
+  /** Formato: 'YEAR_SLASH' (2026/001) o 'YEAR_DASH' (2026-001). */
+  offer_number_format?: 'YEAR_SLASH' | 'YEAR_DASH';
 }
+
+/** Default valori pricing (usati se mancanti in settings). */
+export const PRICING_DEFAULTS = {
+  markup_materials_pct: 25,
+  markup_labor_pct: 70,
+  markup_finish_pct: 30,
+  overhead_pct: 10,
+  safety_pct: 0,
+  transport_flat: 0,
+  disposal_flat: 0,
+  default_customer_discount_pct: 0,
+  iva_pct: 22,
+  offer_validity_days: 30,
+  payment_advance_pct: 30,
+  payment_mid_pct: 40,
+  payment_balance_pct: 30,
+  offer_number_prefix: 'OFF',
+  offer_number_format: 'YEAR_SLASH' as const,
+} satisfies Required<Pick<OrgSettings,
+  | 'markup_materials_pct' | 'markup_labor_pct' | 'markup_finish_pct'
+  | 'overhead_pct' | 'safety_pct' | 'transport_flat' | 'disposal_flat'
+  | 'default_customer_discount_pct' | 'iva_pct' | 'offer_validity_days'
+  | 'payment_advance_pct' | 'payment_mid_pct' | 'payment_balance_pct'
+  | 'offer_number_prefix' | 'offer_number_format'
+>>;
 
 /**
  * Forma anagrafica completa dell'org (settings + colonne dedicate del DB).
@@ -66,6 +134,7 @@ export function useOrgProfile() {
       return {
         name: data?.name ?? '',
         vat_number: data?.vat_number ?? null,
+        // Anagrafica
         logo_url: settings.logo_url,
         company_name: settings.company_name,
         address_line: settings.address_line,
@@ -75,6 +144,27 @@ export function useOrgProfile() {
         phone: settings.phone,
         email: settings.email,
         website: settings.website,
+        // Pricing
+        markup_materials_pct: settings.markup_materials_pct,
+        markup_labor_pct: settings.markup_labor_pct,
+        markup_finish_pct: settings.markup_finish_pct,
+        overhead_pct: settings.overhead_pct,
+        safety_pct: settings.safety_pct,
+        transport_flat: settings.transport_flat,
+        disposal_flat: settings.disposal_flat,
+        default_customer_discount_pct: settings.default_customer_discount_pct,
+        // IVA & validità
+        iva_pct: settings.iva_pct,
+        offer_validity_days: settings.offer_validity_days,
+        payment_advance_pct: settings.payment_advance_pct,
+        payment_mid_pct: settings.payment_mid_pct,
+        payment_balance_pct: settings.payment_balance_pct,
+        delivery_terms: settings.delivery_terms,
+        warranty_terms: settings.warranty_terms,
+        terms_text: settings.terms_text,
+        // Numerazione
+        offer_number_prefix: settings.offer_number_prefix,
+        offer_number_format: settings.offer_number_format,
       };
     },
   });
@@ -93,6 +183,27 @@ interface UpdateOrgProfilePayload {
   email?: string;
   website?: string;
   logo_url?: string | null;
+  // Pricing
+  markup_materials_pct?: number;
+  markup_labor_pct?: number;
+  markup_finish_pct?: number;
+  overhead_pct?: number;
+  safety_pct?: number;
+  transport_flat?: number;
+  disposal_flat?: number;
+  default_customer_discount_pct?: number;
+  // IVA & validità
+  iva_pct?: number;
+  offer_validity_days?: number;
+  payment_advance_pct?: number;
+  payment_mid_pct?: number;
+  payment_balance_pct?: number;
+  delivery_terms?: string;
+  warranty_terms?: string;
+  terms_text?: string;
+  // Numerazione
+  offer_number_prefix?: string;
+  offer_number_format?: 'YEAR_SLASH' | 'YEAR_DASH';
 }
 
 export function useUpdateOrgProfile() {
@@ -111,15 +222,30 @@ export function useUpdateOrgProfile() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const currentSettings = ((current?.settings as any) ?? {}) as OrgSettings;
       const settingsKeys: Array<keyof OrgSettings> = [
+        // Anagrafica
         'company_name', 'address_line', 'city', 'zip_code', 'province',
         'phone', 'email', 'website', 'logo_url',
+        // Pricing
+        'markup_materials_pct', 'markup_labor_pct', 'markup_finish_pct',
+        'overhead_pct', 'safety_pct', 'transport_flat', 'disposal_flat',
+        'default_customer_discount_pct',
+        // IVA & validità
+        'iva_pct', 'offer_validity_days', 'payment_advance_pct',
+        'payment_mid_pct', 'payment_balance_pct', 'delivery_terms',
+        'warranty_terms', 'terms_text',
+        // Numerazione
+        'offer_number_prefix', 'offer_number_format',
       ];
       const newSettings: OrgSettings = { ...currentSettings };
       for (const k of settingsKeys) {
         if (k in patch) {
           const v = (patch as Record<string, unknown>)[k];
-          if (v == null || v === '') delete newSettings[k];
-          else (newSettings[k] as unknown) = v;
+          // null/undefined → cancella; "" (string vuota) → cancella; 0 → ammesso.
+          if (v == null || (typeof v === 'string' && v === '')) {
+            delete newSettings[k];
+          } else {
+            (newSettings[k] as unknown) = v;
+          }
         }
       }
       const updatePayload: Record<string, unknown> = { settings: newSettings };
