@@ -45,6 +45,48 @@ export const useStratigraphy = (id?: string) => {
         throw layersError;
       }
 
+      // 🔥 F19.3 — Override unit_price con il valore NETTO dalla view
+      // materials_with_pricing. Il join via FK sopra carica `materials` raw,
+      // dove unit_price = list_price perché il trigger di recompute filtra
+      // per organization_id (e i materiali catalogo globale hanno org=NULL,
+      // quindi non vengono mai ricomputati). La view invece applica gli
+      // sconti famiglia + extra correttamente per l'org corrente (via RLS).
+      const matIds: string[] = [];
+      for (const l of layers ?? []) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ml = l as any;
+        if (ml.materials?.id) matIds.push(ml.materials.id);
+        if (ml.screw_materials?.id) matIds.push(ml.screw_materials.id);
+      }
+      const uniqueMatIds = Array.from(new Set(matIds));
+      const priceMap = new Map<string, number>();
+      if (uniqueMatIds.length > 0) {
+        const { data: pricing, error: pricingError } = await supabase
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .from('materials_with_pricing' as any)
+          .select('id, unit_price')
+          .in('id', uniqueMatIds);
+        if (pricingError) {
+          console.warn(`[useStratigraphy] ⚠️ pricing override failed:`, pricingError);
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          for (const p of (pricing ?? []) as any[]) {
+            priceMap.set(p.id, Number(p.unit_price ?? 0));
+          }
+        }
+      }
+      // Applica gli override
+      for (const l of layers ?? []) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ml = l as any;
+        if (ml.materials?.id && priceMap.has(ml.materials.id)) {
+          ml.materials.unit_price = priceMap.get(ml.materials.id);
+        }
+        if (ml.screw_materials?.id && priceMap.has(ml.screw_materials.id)) {
+          ml.screw_materials.unit_price = priceMap.get(ml.screw_materials.id);
+        }
+      }
+
       console.log(`[useStratigraphy] ✅ LAYERS LOADED - ${layers?.length || 0} layers found`, {
         layersWithMaterials: layers?.filter(l => l.materials).length || 0,
         layersWithScrews: layers?.filter(l => l.screw_materials).length || 0

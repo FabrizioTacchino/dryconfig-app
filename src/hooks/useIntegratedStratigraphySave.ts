@@ -5,6 +5,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { WallType, DatabaseWallType } from '@/types';
 import { toast } from 'sonner';
 import { Layer } from '../components/configurator/types/StratigraphyTypes';
+import { computeStratigraphyCosts } from '@/components/configurator-v2/hooks/computeStratigraphyCosts';
+import type { LayerV2 } from '@/components/configurator-v2/types';
 
 // Helper function to convert WallType to DatabaseWallType
 const mapWallTypeToDatabase = (wallType: WallType): DatabaseWallType => {
@@ -120,75 +122,63 @@ export const useIntegratedStratigraphySave = () => {
       const costPerHour = parseFloat(settingData?.value || '30');
       console.log('[useIntegratedStratigraphySave] 💰 COSTO ORARIO DAL DB:', costPerHour);
 
-      // 🔥 STEP 1: CALCOLA I VALORI INDIVIDUALI PER OGNI LAYER (IDENTICO AL PREVIEW)
-      let totalMaterialCost = 0;
-      let totalScrewCost = 0;
-      let totalInstallTime = 0;
-      let totalLaborCost = 0;
+      // 🔥 F19.2: USA computeStratigraphyCosts — STESSA formula del preview V2.
+      // Niente più formula custom inline (sottostimava manodopera ~60×
+      // perché leggeva installation_time_per_sqm come minuti invece che ore).
+      // Single source of truth: preview, save, reload, bulk update sono
+      // tutti allineati.
+      const studSpacingMm = data.studSpacingMm ?? 600;
+      // Cast Layer (V1) → LayerV2 — strutturalmente compatibili (entrambi
+      // hanno materialId, material, thickness, screwMaterial, screwQuantity).
+      const layersForCompute = validLayers.map((l, idx) => ({
+        id: (l as { id?: string }).id ?? `tmp-${idx}`,
+        position: idx + 1,
+        materialId: l.materialId,
+        material: l.material,
+        thickness: l.thickness,
+        screwMaterialId: l.screwMaterialId,
+        screwMaterial: l.screwMaterial,
+        screwQuantity: l.screwQuantity,
+        screwCostPerSqm: l.screwCostPerSqm,
+        interAxis: l.interAxis,
+      })) as unknown as LayerV2[];
+      const breakdown = computeStratigraphyCosts(layersForCompute, studSpacingMm, costPerHour);
+
+      // Indicizza i rows per layerIdx per il salvataggio per-layer.
+      const rowByLayerIdx = new Map<number, typeof breakdown.rows[number]>();
+      breakdown.rows.forEach(r => rowByLayerIdx.set(r.layerIdx, r));
+      const screwRowByLayerIdx = new Map<number, typeof breakdown.screwRows[number]>();
+      breakdown.screwRows.forEach(r => screwRowByLayerIdx.set(r.layerIdx, r));
 
       const layersWithCalculatedValues = validLayers.map((layer, index) => {
-        // 📊 CALCOLO COSTO MATERIALE PER QUESTO LAYER (IDENTICO AL PREVIEW)
-        let layerMaterialCost = 0;
-        if (layer.material) {
-          const unitPrice = layer.material.unit_price || 0;
-          const incidence = layer.material.incidence_per_sqm || 1;
-          layerMaterialCost = unitPrice * incidence;
-        }
-
-        // ⏱️ CALCOLO TEMPO INSTALLAZIONE PER QUESTO LAYER (IDENTICO AL PREVIEW)
-        let layerInstallTime = 0;
-        if (layer.material) {
-          // Tempo base del materiale
-          const baseInstallTime = layer.material.installation_time_per_sqm || 0;
-          // Tempo aggiuntivo per le viti (0.03 minuti per vite)
-          const screwInstallTime = layer.screwQuantity ? layer.screwQuantity * 0.03 : 0;
-          layerInstallTime = baseInstallTime + screwInstallTime;
-        }
-
-        // 💰 CALCOLO COSTO MANODOPERA PER QUESTO LAYER CON COSTO ORARIO DAL DB
-        const layerLaborCost = (layerInstallTime * costPerHour) / 60;
-
-        // 🔩 COSTO VITI PER QUESTO LAYER (IDENTICO AL PREVIEW)
-        const layerScrewCost = layer.screwCostPerSqm || 0;
-
-        // ➕ AGGIUNGI AI TOTALI (IDENTICO AL PREVIEW)
-        totalMaterialCost += layerMaterialCost;
-        totalScrewCost += layerScrewCost;
-        totalInstallTime += layerInstallTime;
-        totalLaborCost += layerLaborCost;
-
-        console.log(`📋 [SAVE Layer ${index + 1}] ${layer.material?.name}:`, {
-          materialCost: layerMaterialCost,
-          installTime: layerInstallTime,
-          laborCost: layerLaborCost,
-          screwCost: layerScrewCost,
-          costPerHour: costPerHour
-        });
+        const row = rowByLayerIdx.get(index);
+        const screwRow = screwRowByLayerIdx.get(index);
+        const layerMaterialCost = row?.rowCost ?? 0;
+        const layerMinutes = (row?.rowMinutes ?? 0) + (screwRow?.rowMinutes ?? 0);
+        const layerLaborCost = (layerMinutes * costPerHour) / 60;
+        const layerScrewCost = screwRow?.rowCost ?? Number(layer.screwCostPerSqm ?? 0);
 
         return {
           ...layer,
           calculatedMaterialCost: layerMaterialCost,
-          calculatedInstallTime: layerInstallTime,
+          calculatedInstallTime: layerMinutes,
           calculatedLaborCost: layerLaborCost,
-          calculatedScrewCost: layerScrewCost
+          calculatedScrewCost: layerScrewCost,
         };
       });
 
-      // 🎯 TOTALI FINALI CON ARROTONDAMENTO IDENTICO AL PREVIEW
-      // 🔥 CORREZIONE CRITICA: Arrotonda SOLO il totale finale, non i componenti
       const finalTotals = {
-        materialCost: Math.round(totalMaterialCost * 1000) / 1000,
-        screwCost: Math.round(totalScrewCost * 1000) / 1000,
-        laborCost: Math.round(totalLaborCost * 1000) / 1000,
-        installationTime: Math.round(totalInstallTime * 1000) / 1000,
-        // 🎯 ARROTONDAMENTO FINALE IDENTICO AL PREVIEW: prima somma, poi arrotonda
-        comprehensiveCost: Math.round((totalMaterialCost + totalScrewCost + totalLaborCost) * 100) / 100
+        materialCost: Math.round(breakdown.subtotalMaterials * 1000) / 1000,
+        screwCost: Math.round(breakdown.subtotalScrews * 1000) / 1000,
+        laborCost: Math.round(breakdown.laborCost * 1000) / 1000,
+        installationTime: Math.round(breakdown.laborMinutes * 1000) / 1000,
+        comprehensiveCost: Math.round(breakdown.totalCost * 100) / 100,
       };
 
       console.log('🎯 [SAVE TOTALI] IDENTICI AL PREVIEW CON ARROTONDAMENTO FINALE:', {
         ...finalTotals,
         costPerHour: costPerHour,
-        rawTotal: totalMaterialCost + totalScrewCost + totalLaborCost,
+        rawTotal: breakdown.totalCost,
         finalRoundedTotal: finalTotals.comprehensiveCost
       });
 

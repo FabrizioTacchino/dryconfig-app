@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { computeStratigraphyCosts } from '@/components/configurator-v2/hooks/computeStratigraphyCosts';
+import type { LayerV2 } from '@/components/configurator-v2/types';
 
 export const useUpdateGeneralStratigraphyPrices = () => {
   const { user } = useAuth();
@@ -54,12 +56,14 @@ export const useUpdateGeneralStratigraphyPrices = () => {
               unit_price,
               incidence_per_sqm,
               incidence_base,
+              width,
               installation_time_per_sqm
             ),
             screw_materials:materials!layers_screw_material_id_fkey (
               id,
               name,
-              unit_price
+              unit_price,
+              installation_time_per_sqm
             )
           )
         `)
@@ -73,67 +77,79 @@ export const useUpdateGeneralStratigraphyPrices = () => {
 
       console.log('[useUpdateGeneralStratigraphyPrices] 📋 Stratigraphy data loaded:', stratigraphy.name);
 
-      // 🔥 USE THE SAME LOGIC AS useIntegratedStratigraphySave for consistent results
-      let materialCost = 0;
-      let screwCost = 0;
-      let totalInstallTime = 0;
-      
-      if (stratigraphy.layers && Array.isArray(stratigraphy.layers)) {
-        stratigraphy.layers.forEach((layer: any) => {
-          if (layer.materials && layer.thickness > 0) {
-            // Base material cost (same logic as save)
-            const unitPrice = layer.materials.unit_price || 0;
-            const incidence = layer.materials.incidence_per_sqm || 1;
-            materialCost += unitPrice * incidence;
-            
-            // Installation time from material
-            const installTime = layer.materials.installation_time_per_sqm || 0;
-            totalInstallTime += installTime;
-            
-            // Add screw cost if present
-            if (layer.screw_cost_per_sqm) {
-              screwCost += layer.screw_cost_per_sqm;
-            }
-            
-            // Add screw installation time (0.03 minutes per screw)
-            if (layer.screw_quantity && layer.screw_quantity > 0) {
-              totalInstallTime += layer.screw_quantity * 0.03;
-            }
-            
-            console.log(`[useUpdateGeneralStratigraphyPrices] 💰 Layer ${layer.materials.name}: unitPrice=${unitPrice}, incidence=${incidence}, materialCost=${unitPrice * incidence}`);
-          }
-        });
+      // 🔥 F19.4 — Override unit_price col NETTO da materials_with_pricing.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const dbLayers: any[] = stratigraphy.layers ?? [];
+      const layerMatIds: string[] = [];
+      for (const dbL of dbLayers) {
+        if (dbL.materials?.id) layerMatIds.push(dbL.materials.id);
+        if (dbL.screw_materials?.id) layerMatIds.push(dbL.screw_materials.id);
       }
-      
-      // 🔥 CALCOLA MANODOPERA CON COSTO ORARIO DAL DATABASE (IDENTICO A useIntegratedStratigraphySave)
-      const laborCost = (totalInstallTime * costPerHour) / 60;
-      
-      // Calculate total comprehensive cost with HIGH PRECISION to match UI exactly
-      const comprehensiveCost = materialCost + screwCost + laborCost;
-      
-      const newCostPerSqm = Math.round(comprehensiveCost * 100) / 100; // Final 2 decimal precision
+      const uniqueLayerMatIds = Array.from(new Set(layerMatIds));
+      const layerPriceMap = new Map<string, number>();
+      if (uniqueLayerMatIds.length > 0) {
+        const { data: pricing } = await supabase
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .from('materials_with_pricing' as any)
+          .select('id, unit_price')
+          .in('id', uniqueLayerMatIds);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const p of (pricing ?? []) as any[]) {
+          layerPriceMap.set(p.id, Number(p.unit_price ?? 0));
+        }
+      }
+      for (const dbL of dbLayers) {
+        if (dbL.materials?.id && layerPriceMap.has(dbL.materials.id)) {
+          dbL.materials.unit_price = layerPriceMap.get(dbL.materials.id);
+        }
+        if (dbL.screw_materials?.id && layerPriceMap.has(dbL.screw_materials.id)) {
+          dbL.screw_materials.unit_price = layerPriceMap.get(dbL.screw_materials.id);
+        }
+      }
 
-      console.log('[useUpdateGeneralStratigraphyPrices] 🧮 COMPREHENSIVE COST BREAKDOWN (SAME AS SAVE):', {
+      // Costruisci LayerV2[] e usa la STESSA formula di preview/save/bulk.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sortedDbLayers = [...dbLayers].sort((a: any, b: any) => a.position - b.position);
+      const layersForCompute = sortedDbLayers.map((dbL, idx) => ({
+        id: dbL.id ?? `tmp-${idx}`,
+        position: idx + 1,
+        materialId: dbL.material_id ?? null,
+        material: dbL.materials ?? null,
+        thickness: Number(dbL.thickness ?? 0),
+        interAxis: dbL.inter_axis ?? undefined,
+        screwMaterialId: dbL.screw_material_id ?? null,
+        screwMaterial: dbL.screw_materials ?? null,
+        screwQuantity: dbL.screw_quantity ?? undefined,
+        screwCostPerSqm: dbL.screw_cost_per_sqm ?? undefined,
+      })) as unknown as LayerV2[];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const studSpacingMm = Number((stratigraphy as any).stud_spacing_mm ?? 600);
+      const breakdown = computeStratigraphyCosts(layersForCompute, studSpacingMm, costPerHour);
+
+      const materialCost = breakdown.subtotalMaterials;
+      const screwCost = breakdown.subtotalScrews;
+      const laborCost = breakdown.laborCost;
+      const totalInstallTime = breakdown.laborMinutes;
+      const newCostPerSqm = Math.round(breakdown.totalCost * 100) / 100;
+
+      console.log('[useUpdateGeneralStratigraphyPrices] 🧮 COMPREHENSIVE COST BREAKDOWN (computeStratigraphyCosts):', {
         materialCost: Math.round(materialCost * 1000) / 1000,
         screwCost: Math.round(screwCost * 1000) / 1000,
         laborCost: Math.round(laborCost * 1000) / 1000,
-        comprehensive: newCostPerSqm
+        comprehensive: newCostPerSqm,
       });
-
-      console.log('[useUpdateGeneralStratigraphyPrices] 💲 New comprehensive cost per sqm:', newCostPerSqm);
 
       // Update the general stratigraphy with new comprehensive cost
       const { data: result, error: updateError } = await supabase
         .from('stratigraphies')
         .update({
-          // 🔥 UPDATE ALL COST FIELDS like the save function does
           material_cost_per_sqm: Math.round(materialCost * 1000) / 1000,
           screw_cost_per_sqm: Math.round(screwCost * 1000) / 1000,
           labor_cost_per_sqm: Math.round(laborCost * 1000) / 1000,
           comprehensive_cost_per_sqm: newCostPerSqm,
           installation_time_per_sqm: Math.round(totalInstallTime * 1000) / 1000,
-          cost_per_sqm: newCostPerSqm, // Legacy field for compatibility
-          updated_at: new Date().toISOString()
+          cost_per_sqm: newCostPerSqm,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', stratigraphyId)
         .select()

@@ -3,7 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { EstimateStratigraphy } from '@/types/estimateStratigraphy';
-import { computeBaseCosts, dbLayerToCalcLayer } from '@/utils/cost/computeBaseCosts';
+import { computeStratigraphyCosts } from '@/components/configurator-v2/hooks/computeStratigraphyCosts';
+import type { LayerV2 } from '@/components/configurator-v2/types';
 
 interface BulkUpdateParams {
   estimateStratigraphies: EstimateStratigraphy[];
@@ -141,6 +142,7 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
                 thickness,
                 inter_axis,
                 material_id,
+                screw_material_id,
                 screw_cost_per_sqm,
                 screw_quantity,
                 material_cost_per_sqm,
@@ -158,6 +160,7 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
                   supplier,
                   code,
                   description,
+                  width,
                   weight_per_sqm,
                   thermal_conductivity,
                   acoustic_performance,
@@ -198,18 +201,81 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
             continue;
           }
 
-          const calcLayers = dbLayers.map(dbLayerToCalcLayer);
-          const result = computeBaseCosts(calcLayers, costPerHour);
+          // 🔥 F19.4 — Override unit_price col NETTO da materials_with_pricing.
+          // Il join via FK carica `materials` raw dove unit_price = list_price
+          // perché il trigger di recompute filtra per organization_id (i
+          // materiali catalogo globale hanno org=NULL → non vengono mai
+          // ricomputati). La view applica gli sconti famiglia + extra
+          // correttamente per l'org corrente (RLS).
+          const layerMatIds: string[] = [];
+          for (const dbL of dbLayers) {
+            if (dbL.materials?.id) layerMatIds.push(dbL.materials.id);
+            if (dbL.screw_materials?.id) layerMatIds.push(dbL.screw_materials.id);
+          }
+          const uniqueLayerMatIds = Array.from(new Set(layerMatIds));
+          const layerPriceMap = new Map<string, number>();
+          if (uniqueLayerMatIds.length > 0) {
+            const { data: pricing } = await supabase
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              .from('materials_with_pricing' as any)
+              .select('id, unit_price')
+              .in('id', uniqueLayerMatIds);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            for (const p of (pricing ?? []) as any[]) {
+              layerPriceMap.set(p.id, Number(p.unit_price ?? 0));
+            }
+          }
+          for (const dbL of dbLayers) {
+            if (dbL.materials?.id && layerPriceMap.has(dbL.materials.id)) {
+              dbL.materials.unit_price = layerPriceMap.get(dbL.materials.id);
+            }
+            if (dbL.screw_materials?.id && layerPriceMap.has(dbL.screw_materials.id)) {
+              dbL.screw_materials.unit_price = layerPriceMap.get(dbL.screw_materials.id);
+            }
+          }
 
-          if (result.validLayerCount === 0) {
+          // Conta layer validi e blocca se vuoti.
+          const validLayerCount = dbLayers.filter(
+            (l) => !!l.materials && Number(l.thickness ?? 0) > 0,
+          ).length;
+          if (validLayerCount === 0) {
             skipped.push({
               id: estStrat.id,
               name: estStrat.name,
               reason: 'no_valid_layers',
-              detail: `${result.invalidLayerCount} layer senza materiale/spessore`,
+              detail: `${dbLayers.length} layer senza materiale/spessore`,
             });
             continue;
           }
+
+          // Costruisci LayerV2[] dai layer DB e usa la STESSA formula del
+          // preview/save (computeStratigraphyCosts, category-aware).
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sortedDbLayers = [...dbLayers].sort((a: any, b: any) => a.position - b.position);
+          const layersForCompute = sortedDbLayers.map((dbL, idx) => ({
+            id: dbL.id ?? `tmp-${idx}`,
+            position: idx + 1,
+            materialId: dbL.material_id ?? null,
+            material: dbL.materials ?? null,
+            thickness: Number(dbL.thickness ?? 0),
+            interAxis: dbL.inter_axis ?? undefined,
+            screwMaterialId: dbL.screw_material_id ?? null,
+            screwMaterial: dbL.screw_materials ?? null,
+            screwQuantity: dbL.screw_quantity ?? undefined,
+            screwCostPerSqm: dbL.screw_cost_per_sqm ?? undefined,
+          })) as unknown as LayerV2[];
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const studSpacingMm = Number((original as any).stud_spacing_mm ?? 600);
+          const breakdown = computeStratigraphyCosts(layersForCompute, studSpacingMm, costPerHour);
+
+          const result = {
+            materialCost: Math.round(breakdown.subtotalMaterials * 1000) / 1000,
+            screwCost: Math.round(breakdown.subtotalScrews * 1000) / 1000,
+            laborCost: Math.round(breakdown.laborCost * 1000) / 1000,
+            installationTime: Math.round(breakdown.laborMinutes * 1000) / 1000,
+            comprehensiveCost: Math.round(breakdown.totalCost * 100) / 100,
+          };
 
           // Protezione: NON sovrascrivere il preventivo con 0€. Marca come da
           // revisionare invece. Capita quando la stratigrafia originale è
@@ -219,7 +285,7 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
               id: estStrat.id,
               name: estStrat.name,
               reason: 'zero_cost_recalc',
-              detail: `${result.validLayerCount} layer validi ma costo totale calcolato = 0€`,
+              detail: `${validLayerCount} layer validi ma costo totale calcolato = 0€`,
             });
             continue;
           }
@@ -294,18 +360,18 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const sortedLayers = [...dbLayers].sort((a: any, b: any) => a.position - b.position);
 
+          const updatePayload: Record<string, unknown> = {
+            unit_cost: newUnitCost,
+            total_cost: newTotalCost,
+            stratigraphy_data: updatedStratigraphyData,
+            layers_data: sortedLayers,
+            finish_cost_per_sqm: newFinishCost > 0 ? newFinishCost : null,
+            ...(refreshedFinishComponents ? { finish_components_data: refreshedFinishComponents } : {}),
+            prices_updated_at: new Date().toISOString(),
+          };
           const { error: updateError } = await supabase
             .from('estimate_stratigraphies')
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            .update({
-              unit_cost: newUnitCost,
-              total_cost: newTotalCost,
-              stratigraphy_data: updatedStratigraphyData,
-              layers_data: sortedLayers,
-              finish_cost_per_sqm: newFinishCost > 0 ? newFinishCost : null,
-              ...(refreshedFinishComponents ? { finish_components_data: refreshedFinishComponents } : {}),
-              prices_updated_at: new Date().toISOString(),
-            } as any)
+            .update(updatePayload)
             .eq('id', estStrat.id);
 
           if (updateError) {
