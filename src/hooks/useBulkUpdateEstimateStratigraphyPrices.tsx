@@ -293,6 +293,10 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
           // F7.7 + F9.5: ricalcola finish_cost dai componenti snapshot coi
           // prezzi correnti (i materiali finitura possono aver cambiato prezzo)
           // e rinfresca il waste_percentage per ogni componente snapshot.
+          // F20.6: includi SEMPRE la labor anche se finish_components_data è
+          // vuoto. Livelli come Q1/Q2 hanno solo labor (no materiali BOM) e
+          // il create li conta — il bulk update prima li ignorava, generando
+          // divergenza identica al costo labor finitura (es. 10min × 30€/h = 5€).
           let newFinishCost = 0;
           let newFinishLaborMin: number | null = null;
           let refreshedFinishComponents: Array<Record<string, unknown>> | null = null;
@@ -306,38 +310,44 @@ export const useBulkUpdateEstimateStratigraphyPrices = () => {
           const finishSnap = (currentRow as any)?.finish_components_data;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           newFinishLaborMin = (currentRow as any)?.finish_labor_minutes_per_sqm ?? null;
-          if (Array.isArray(finishSnap) && finishSnap.length > 0) {
-            const matIds = finishSnap
-              .map((c: Record<string, unknown>) => c.material_id as string | undefined)
-              .filter((x): x is string => !!x);
-            const priceMap = new Map<string, { unit_price?: number; unit?: string; box_pieces?: number; waste_percentage?: number | null }>();
-            if (matIds.length > 0) {
-              const { data: freshMats } = await supabase
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                .from('materials_with_pricing' as any)
-                .select('id, unit_price, unit, box_pieces, waste_percentage')
-                .in('id', matIds);
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              for (const m of (freshMats ?? []) as any[]) {
-                priceMap.set(m.id, m);
-              }
-            }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const hasFinishLevel = !!(currentRow as any)?.finish_level;
+          const hasComponents = Array.isArray(finishSnap) && finishSnap.length > 0;
+          // Calcola se: ha components OPPURE ha un livello finitura con labor.
+          if (hasComponents || (hasFinishLevel && (newFinishLaborMin ?? 0) > 0)) {
             let materialsCost = 0;
-            refreshedFinishComponents = [];
-            for (const c of finishSnap as Array<Record<string, unknown>>) {
-              const fresh = priceMap.get(c.material_id as string);
-              const unitPrice = Number(fresh?.unit_price ?? c.unit_price ?? 0);
-              const unit = String(fresh?.unit ?? c.material_unit ?? '').toLowerCase().trim();
-              const box = Number(fresh?.box_pieces ?? c.box_pieces ?? 0);
-              const pricePerUsage = (unit === 'scatola' && box > 0) ? unitPrice / box : unitPrice;
-              materialsCost += Number(c.quantity_per_sqm ?? 0) * pricePerUsage;
-              refreshedFinishComponents.push({
-                ...c,
-                unit_price: unitPrice,
-                material_unit: unit || c.material_unit,
-                box_pieces: box > 0 ? box : (c.box_pieces ?? null),
-                waste_percentage: fresh?.waste_percentage ?? null,
-              });
+            if (hasComponents) {
+              const matIds = (finishSnap as Array<Record<string, unknown>>)
+                .map((c) => c.material_id as string | undefined)
+                .filter((x): x is string => !!x);
+              const priceMap = new Map<string, { unit_price?: number; unit?: string; box_pieces?: number; waste_percentage?: number | null }>();
+              if (matIds.length > 0) {
+                const { data: freshMats } = await supabase
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  .from('materials_with_pricing' as any)
+                  .select('id, unit_price, unit, box_pieces, waste_percentage')
+                  .in('id', matIds);
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                for (const m of (freshMats ?? []) as any[]) {
+                  priceMap.set(m.id, m);
+                }
+              }
+              refreshedFinishComponents = [];
+              for (const c of finishSnap as Array<Record<string, unknown>>) {
+                const fresh = priceMap.get(c.material_id as string);
+                const unitPrice = Number(fresh?.unit_price ?? c.unit_price ?? 0);
+                const unit = String(fresh?.unit ?? c.material_unit ?? '').toLowerCase().trim();
+                const box = Number(fresh?.box_pieces ?? c.box_pieces ?? 0);
+                const pricePerUsage = (unit === 'scatola' && box > 0) ? unitPrice / box : unitPrice;
+                materialsCost += Number(c.quantity_per_sqm ?? 0) * pricePerUsage;
+                refreshedFinishComponents.push({
+                  ...c,
+                  unit_price: unitPrice,
+                  material_unit: unit || c.material_unit,
+                  box_pieces: box > 0 ? box : (c.box_pieces ?? null),
+                  waste_percentage: fresh?.waste_percentage ?? null,
+                });
+              }
             }
             const laborCost = ((newFinishLaborMin ?? 0) * costPerHour) / 60;
             newFinishCost = Math.round((materialsCost + laborCost) * 10000) / 10000;
