@@ -52,11 +52,37 @@ async function fetchFinishCostSnapshot(
     `)
     .eq('finish_level_id', level.id);
 
+  // 🔥 F20.2 — Override unit_price col NETTO da materials_with_pricing.
+  // Il join via FK carica `materials` raw dove unit_price = list_price
+  // (vedi commento in useStratigraphy.ts / useBulkUpdateEstimateStratigraphyPrices).
+  type FinishCompWithMat = { material?: { id?: string; unit_price?: number | null } | null };
+  const compsArr = (components ?? []) as FinishCompWithMat[];
+  const finishMatIds = compsArr
+    .map((c) => c.material?.id)
+    .filter((x: string | undefined): x is string => !!x);
+  const uniqueFinishMatIds = Array.from(new Set(finishMatIds));
+  if (uniqueFinishMatIds.length > 0) {
+    const { data: pricing } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .from('materials_with_pricing' as any)
+      .select('id, unit_price')
+      .in('id', uniqueFinishMatIds);
+    const priceMap = new Map<string, number>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const p of (pricing ?? []) as any[]) {
+      priceMap.set(p.id, Number(p.unit_price ?? 0));
+    }
+    for (const c of compsArr) {
+      if (c.material?.id && priceMap.has(c.material.id)) {
+        c.material.unit_price = priceMap.get(c.material.id);
+      }
+    }
+  }
+
   // 4) Calcolo costo materiali
   let materialsCost = 0;
   const snapshot: Array<Record<string, unknown>> = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const c of (components ?? []) as any[]) {
+  for (const c of compsArr) {
     const mat = c.material;
     if (!mat) continue;
     const unitPrice = Number(mat.unit_price ?? 0);
@@ -225,7 +251,9 @@ export const useCreateEstimateStratigraphy = () => {
           finish_components_data: finishSnapshot?.finishComponentsSnapshot ?? null,
           // New snapshot fields including custom_screws data
           stratigraphy_data: stratigraphySnapshot,
-          layers_data: stratigraphySnapshot.layers?.sort((a: any, b: any) => a.position - b.position) || [],
+          layers_data: (stratigraphySnapshot.layers ?? []).slice().sort(
+            (a: { position: number }, b: { position: number }) => a.position - b.position,
+          ),
           prices_updated_at: new Date().toISOString(),
           is_snapshot: true,
           original_stratigraphy_id: data.stratigraphyId

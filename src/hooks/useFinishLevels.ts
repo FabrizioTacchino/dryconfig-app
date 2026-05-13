@@ -71,8 +71,37 @@ export function useFinishLevels() {
         console.error('[useFinishLevels] components error:', compsError);
       }
 
+      // 🔥 F20.2 — Override unit_price col NETTO da materials_with_pricing.
+      // Il join via FK carica `materials` raw dove unit_price = list_price
+      // (il trigger di recompute filtra per organization_id e i materiali
+      // catalogo globale hanno org=NULL → non vengono mai ricomputati).
+      // Senza questo override il preview costo finitura usa il listino,
+      // poi il bulk update applica il netto e i due divergono.
+      const compsList = (components ?? []) as FinishLevelComponent[];
+      const matIds = compsList
+        .map(c => c.material?.id)
+        .filter((x): x is string => !!x);
+      const uniqueMatIds = Array.from(new Set(matIds));
+      if (uniqueMatIds.length > 0) {
+        const { data: pricing } = await supabase
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .from('materials_with_pricing' as any)
+          .select('id, unit_price')
+          .in('id', uniqueMatIds);
+        const priceMap = new Map<string, number>();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const p of (pricing ?? []) as any[]) {
+          priceMap.set(p.id, Number(p.unit_price ?? 0));
+        }
+        for (const c of compsList) {
+          if (c.material?.id && priceMap.has(c.material.id)) {
+            c.material.unit_price = priceMap.get(c.material.id) ?? 0;
+          }
+        }
+      }
+
       const byLevel = new Map<string, FinishLevelComponent[]>();
-      for (const c of (components ?? []) as FinishLevelComponent[]) {
+      for (const c of compsList) {
         const arr = byLevel.get(c.finish_level_id) ?? [];
         arr.push(c);
         byLevel.set(c.finish_level_id, arr);

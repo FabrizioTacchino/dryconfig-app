@@ -209,7 +209,11 @@ export const useIntegratedStratigraphySave = () => {
         comprehensive_cost_per_sqm: finalTotals.comprehensiveCost,
         installation_time_per_sqm: finalTotals.installationTime,
         cost_per_sqm: finalTotals.comprehensiveCost, // Legacy field per compatibilità
-        ...(data.studSpacingMm != null ? { stud_spacing_mm: data.studSpacingMm } : {}),
+        // F20.3 — Persistere SEMPRE stud_spacing_mm (default 600). Senza questo,
+        // il bulk update sul preventivo legge `stud_spacing_mm ?? 600` ma se la
+        // stratigrafia fu salvata con un passo diverso e poi il campo è NULL,
+        // il recompute usa un passo errato e diverge dal preview.
+        stud_spacing_mm: data.studSpacingMm ?? 600,
         // Metadati certificazione (popolati solo se l'utente li valorizza)
         ...(data.certificationCode !== undefined ? { certification_code: data.certificationCode } : {}),
         ...(data.certificationLab !== undefined ? { certification_lab: data.certificationLab } : {}),
