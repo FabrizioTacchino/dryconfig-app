@@ -12,6 +12,8 @@ import { toast } from '@/hooks/use-toast';
 import { useEstimates } from '@/hooks/useEstimates';
 import EstimateNotesField from "./EstimateNotesField";
 import { useEstimateNotes } from "@/hooks/useEstimateNotes";
+import { useOrgProfile } from "@/hooks/useOrgSettings";
+import { Sentry } from "@/lib/sentry";
 
 interface EstimateHeaderProps {
   estimate: Estimate;
@@ -25,6 +27,7 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
   const [tmpName, setTmpName] = useState(estimate.name);
   const [isSaving, setIsSaving] = useState(false);
   const [isExportingRDA, setIsExportingRDA] = useState(false);
+  const { data: orgProfile } = useOrgProfile();
 
   const statusColors = {
     draft: 'bg-gray-100 text-gray-800 border-gray-200',
@@ -70,20 +73,29 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
   // Funzione per export RDA Completa
   const handleExportCompleteRDA = async () => {
     if (isExportingRDA) return;
-    
+
     setIsExportingRDA(true);
     try {
       const { exportCompleteRDA } = await import('@/utils/export');
-      await exportCompleteRDA(estimate, stratigraphies);
+      await exportCompleteRDA(estimate, stratigraphies, orgProfile ?? null);
       toast({
         title: 'RDA Completa generata con successo!',
         description: 'Il documento completo con tutte le stratigrafie è stato scaricato.',
       });
     } catch (error) {
       console.error('Errore export RDA Completa:', error);
+      // Manda in Sentry con contesto utile per il debug
+      Sentry.captureException(error, {
+        tags: { feature: 'export-rda' },
+        extra: {
+          estimateId: estimate?.id,
+          stratigraphyCount: stratigraphies?.length,
+        },
+      });
+      const errMsg = error instanceof Error ? error.message : String(error);
       toast({
-        title: 'Errore durante la generazione RDA Completa',
-        description: 'Si è verificato un errore durante la generazione del documento.',
+        title: 'Errore generazione RDA',
+        description: errMsg.slice(0, 200),
         variant: 'destructive',
       });
     } finally {

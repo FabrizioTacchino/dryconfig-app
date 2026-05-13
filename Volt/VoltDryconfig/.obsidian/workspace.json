@@ -178,6 +178,7 @@
   },
   "active": "690b755fde94210f",
   "lastOpenFiles": [
+    "08_GOTCHAS/prezzo-netto.md",
     "00_HOME.md",
     "02_ARCHITECTURE/stack.md",
     "04_BUGS/F20.7-rounding-mismatch-create-vs-bulk.md",
@@ -191,7 +192,6 @@
     "06_TASKS/active.md",
     "06_TASKS",
     "08_GOTCHAS/rls-org-id.md",
-    "08_GOTCHAS/prezzo-netto.md",
     "08_GOTCHAS/calcolo-costi.md",
     "08_GOTCHAS",
     "04_BUGS/F20-finish-cost-list-vs-net.md",

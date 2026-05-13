@@ -1,18 +1,23 @@
 /**
  * Export PDF del preventivo completo "RDA" (Riepilogo Distinte e Analisi).
  *
- * Layout A4 professionale, ricostruito da zero per F13:
+ * Layout A4 professionale (F13 → F22):
+ *  - Header con logo + ragione sociale + P.IVA + contatti su OGNI pagina
  *  - Pagina 1: copertina con info preventivo e sommario costi finale
  *  - Pagine 2..N: una pagina per stratigrafia con composizione tabellare
  *  - Pagina finale: riepilogo materiali da acquistare con sfridi
+ *  - Footer con numero pagina + brand
  *
- * Usa jspdf + jspdf-autotable. Mantiene la signature pubblica
- * exportCompleteRDA(estimate, stratigraphies) per non rompere i chiamanti.
+ * Usa jspdf + jspdf-autotable. Defensive contro dati mancanti — F22.1 fix:
+ * tutti gli step sono wrap-pati e se uno fallisce un dato di un layer/strat,
+ * registra il problema ma non blocca la generazione del PDF.
  */
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Estimate } from '@/types';
-import { EstimateStratigraphy } from '@/types/estimateStratigraphy';
+import type { Estimate } from '@/types';
+import type { EstimateStratigraphy } from '@/types/estimateStratigraphy';
+import type { OrgProfile } from '@/hooks/useOrgSettings';
+import { Sentry } from '@/lib/sentry';
 
 interface StratigraphyWithLayers extends EstimateStratigraphy {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,12 +55,17 @@ const CATEGORY_ORDER = [
   'screw', 'accessory', 'finish', 'ceiling_tile', 'other',
 ];
 
+const PRIMARY_RGB: [number, number, number] = [40, 80, 130];
+const SECONDARY_RGB: [number, number, number] = [80, 120, 170];
+
 // ============================================================================
-// Helper di lettura layer
+// Helpers
 // ============================================================================
 
 function getLayersOf(s: StratigraphyWithLayers): Array<Record<string, unknown>> {
+  // Snapshot ha layersData (camelCase, valorizzato al create dell'estimate_strat)
   if (s.isSnapshot && Array.isArray(s.layersData)) return s.layersData;
+  // Fallback: join dal catalog (poco probabile post-F5, ma supportiamo)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fromJoin = (s as any).stratigraphy?.layers;
   if (Array.isArray(fromJoin)) return fromJoin;
@@ -75,8 +85,46 @@ function euro(v: number): string {
   return `€ ${v.toFixed(2)}`;
 }
 
+function safeDate(v: unknown): string {
+  try {
+    if (!v) return new Date().toLocaleDateString('it-IT');
+    const d = new Date(v as string | number | Date);
+    if (Number.isNaN(d.getTime())) return new Date().toLocaleDateString('it-IT');
+    return d.toLocaleDateString('it-IT');
+  } catch {
+    return new Date().toLocaleDateString('it-IT');
+  }
+}
+
+/**
+ * Scarica un'immagine da URL e ritorna un dataURL base64 utilizzabile da
+ * jsPDF.addImage. Necessario perché jsPDF lato browser non può scaricare
+ * direttamente URL remoti — deve avere il blob in memoria.
+ *
+ * Gestisce CORS: Supabase Storage espone Access-Control-Allow-Origin: *,
+ * quindi `fetch` funziona. Fallback null in caso di errore (PDF parte
+ * senza logo invece di crashare).
+ */
+async function loadLogoDataUrl(url: string | undefined | null): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { cache: 'force-cache' });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise<string | null>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.warn('[exportCompleteRDA] logo load failed:', err);
+    return null;
+  }
+}
+
 // ============================================================================
-// Aggregazione materiali per riepilogo finale
+// Aggregazione materiali
 // ============================================================================
 
 function aggregateMaterials(stratigraphies: StratigraphyWithLayers[]): AggregatedMaterial[] {
@@ -86,6 +134,7 @@ function aggregateMaterials(stratigraphies: StratigraphyWithLayers[]): Aggregate
     const area = num(strat.area, 0);
     if (area <= 0) continue;
     const layers = getLayersOf(strat);
+    const stratName = strat.name || '—';
 
     for (const layer of layers) {
       const mat = getMatOf(layer);
@@ -94,7 +143,6 @@ function aggregateMaterials(stratigraphies: StratigraphyWithLayers[]): Aggregate
       const matId = String(mat.id ?? mat.code ?? mat.name ?? '');
       if (!matId) continue;
 
-      // Calcolo quantità incidence-based (semplificato per export PDF)
       const incidence = num(mat.incidence_per_sqm, 1);
       const theoreticalQty = area * incidence;
       const wastePct = num(mat.waste_percentage, 0);
@@ -108,8 +156,8 @@ function aggregateMaterials(stratigraphies: StratigraphyWithLayers[]): Aggregate
         existing.theoreticalQty += theoreticalQty;
         existing.purchaseQty += purchaseQty;
         existing.totalCost += totalCost;
-        if (!existing.stratigraphies.includes(strat.name)) {
-          existing.stratigraphies.push(strat.name);
+        if (!existing.stratigraphies.includes(stratName)) {
+          existing.stratigraphies.push(stratName);
         }
       } else {
         map.set(key, {
@@ -123,7 +171,7 @@ function aggregateMaterials(stratigraphies: StratigraphyWithLayers[]): Aggregate
           purchaseQty,
           unitPrice,
           totalCost,
-          stratigraphies: [strat.name],
+          stratigraphies: [stratName],
         });
       }
 
@@ -151,8 +199,8 @@ function aggregateMaterials(stratigraphies: StratigraphyWithLayers[]): Aggregate
           existingScrew.theoreticalQty += screwTheoQty;
           existingScrew.purchaseQty += screwPurchaseQty;
           existingScrew.totalCost += screwTotalCost;
-          if (!existingScrew.stratigraphies.includes(strat.name)) {
-            existingScrew.stratigraphies.push(strat.name);
+          if (!existingScrew.stratigraphies.includes(stratName)) {
+            existingScrew.stratigraphies.push(stratName);
           }
         } else {
           map.set(screwKey, {
@@ -166,14 +214,13 @@ function aggregateMaterials(stratigraphies: StratigraphyWithLayers[]): Aggregate
             purchaseQty: screwPurchaseQty,
             unitPrice: screwUnitPrice,
             totalCost: screwTotalCost,
-            stratigraphies: [strat.name],
+            stratigraphies: [stratName],
           });
         }
       }
     }
   }
 
-  // Ordina: prima per categoria (ordine definito), poi alfabetico
   return Array.from(map.values()).sort((a, b) => {
     const ca = CATEGORY_ORDER.indexOf(a.category);
     const cb = CATEGORY_ORDER.indexOf(b.category);
@@ -183,54 +230,175 @@ function aggregateMaterials(stratigraphies: StratigraphyWithLayers[]): Aggregate
 }
 
 // ============================================================================
+// Header / Footer reusable
+// ============================================================================
+
+interface RenderHeaderArgs {
+  pdf: jsPDF;
+  pageWidth: number;
+  margin: number;
+  org: OrgProfile | null;
+  logoDataUrl: string | null;
+}
+
+/**
+ * Disegna l'header sul TOP della pagina corrente (logo + ragione sociale +
+ * P.IVA + contatti). Ritorna la Y a cui inizia il contenuto sotto.
+ */
+function renderHeader({ pdf, pageWidth, margin, org, logoDataUrl }: RenderHeaderArgs): number {
+  const headerY = margin;
+  const logoSize = 18; // mm — ridotto da 25 per non rubare spazio
+  let textStartX = margin;
+
+  if (logoDataUrl) {
+    try {
+      // Detect formato per jsPDF (PNG/JPEG/SVG sono i casi comuni; mappiamo
+      // tutto a PNG come fallback perché jsPDF lo accetta universalmente)
+      const fmt = logoDataUrl.startsWith('data:image/jpeg')
+        ? 'JPEG'
+        : logoDataUrl.startsWith('data:image/svg')
+          ? 'PNG' // SVG non supportato → fallback testuale
+          : 'PNG';
+      if (fmt !== 'PNG' || !logoDataUrl.startsWith('data:image/svg')) {
+        pdf.addImage(logoDataUrl, fmt, margin, headerY, logoSize, logoSize, undefined, 'FAST');
+        textStartX = margin + logoSize + 5;
+      }
+    } catch (err) {
+      console.warn('[exportCompleteRDA] addImage failed:', err);
+    }
+  }
+
+  // Ragione sociale
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(11);
+  pdf.setTextColor(0);
+  const companyName = org?.company_name?.trim() || org?.name?.trim() || 'DryConfig';
+  pdf.text(companyName, textStartX, headerY + 5);
+
+  // Indirizzo + P.IVA + contatti in due righe
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8);
+  pdf.setTextColor(100);
+
+  const line2Parts: string[] = [];
+  if (org?.address_line) line2Parts.push(org.address_line);
+  const cityChunk = [org?.zip_code, org?.city, org?.province ? `(${org.province})` : '']
+    .filter(Boolean)
+    .join(' ');
+  if (cityChunk) line2Parts.push(cityChunk);
+  if (line2Parts.length > 0) {
+    pdf.text(line2Parts.join(' · '), textStartX, headerY + 10);
+  }
+
+  const line3Parts: string[] = [];
+  if (org?.vat_number) line3Parts.push(`P.IVA ${org.vat_number}`);
+  if (org?.phone) line3Parts.push(`Tel ${org.phone}`);
+  if (org?.email) line3Parts.push(org.email);
+  if (org?.website) line3Parts.push(org.website);
+  if (line3Parts.length > 0) {
+    const line3 = pdf.splitTextToSize(line3Parts.join(' · '), pageWidth - textStartX - margin);
+    pdf.text(line3, textStartX, headerY + 14);
+  }
+
+  pdf.setTextColor(0);
+
+  // Linea separatrice sotto l'header
+  pdf.setDrawColor(...PRIMARY_RGB);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, headerY + logoSize + 2, pageWidth - margin, headerY + logoSize + 2);
+
+  return headerY + logoSize + 6; // Y di inizio contenuto
+}
+
+// ============================================================================
 // Export principale
 // ============================================================================
 
 export const exportCompleteRDA = async (
   estimate: Estimate,
   stratigraphies: StratigraphyWithLayers[],
+  org: OrgProfile | null = null,
 ): Promise<void> => {
+  // Breadcrumbs Sentry per debug se qualcosa fallisce in prod
+  Sentry.addBreadcrumb({
+    category: 'pdf.rda',
+    message: 'export start',
+    level: 'info',
+    data: {
+      estimateId: estimate?.id,
+      stratCount: stratigraphies?.length ?? 0,
+      hasOrg: !!org,
+    },
+  });
+
+  if (!estimate || !estimate.id) {
+    throw new Error('Preventivo non valido (manca id)');
+  }
+  if (!Array.isArray(stratigraphies)) {
+    throw new Error('Lista stratigrafie non valida');
+  }
+
   const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const margin = 15;
 
-  // ========== PAGINA 1: COPERTINA ==========
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(24);
-  pdf.text('PREVENTIVO', margin, 30);
+  // ========== Carica logo (async, no-op se mancante) ==========
+  const logoDataUrl = await loadLogoDataUrl(org?.logo_url);
 
-  pdf.setFontSize(14);
-  pdf.setTextColor(100);
-  pdf.text(estimate.name, margin, 40);
+  // Helper per renderizzare l'header sulla pagina corrente
+  const drawHeader = () => renderHeader({ pdf, pageWidth, margin, org, logoDataUrl });
+
+  // ========== PAGINA 1: COPERTINA ==========
+  let yStart = drawHeader();
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(22);
+  pdf.setTextColor(...PRIMARY_RGB);
+  pdf.text('PREVENTIVO', margin, yStart + 12);
   pdf.setTextColor(0);
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(14);
+  pdf.text(estimate.name || 'Senza nome', margin, yStart + 22);
 
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(10);
-  pdf.text(`Data: ${new Date(estimate.createdAt).toLocaleDateString('it-IT')}`, margin, 50);
+  pdf.setTextColor(80);
+  pdf.text(`Data: ${safeDate(estimate.createdAt)}`, margin, yStart + 30);
+
+  let yCursor = yStart + 38;
   if (estimate.description) {
     const wrappedDesc = pdf.splitTextToSize(`Descrizione: ${estimate.description}`, pageWidth - 2 * margin);
-    pdf.text(wrappedDesc, margin, 57);
+    pdf.text(wrappedDesc, margin, yCursor);
+    yCursor += wrappedDesc.length * 5 + 3;
   }
   if (estimate.notes) {
-    pdf.text('Note:', margin, 75);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Note:', margin, yCursor);
+    pdf.setFont('helvetica', 'normal');
     const wrappedNotes = pdf.splitTextToSize(estimate.notes, pageWidth - 2 * margin);
-    pdf.text(wrappedNotes, margin, 82);
+    pdf.text(wrappedNotes, margin, yCursor + 5);
+    yCursor += wrappedNotes.length * 5 + 8;
   }
+  pdf.setTextColor(0);
 
   // Tabella riepilogo stratigrafie
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(12);
-  pdf.text('Stratigrafie del preventivo', margin, 105);
+  pdf.text('Stratigrafie del preventivo', margin, yCursor + 5);
 
-  const totMaterials = stratigraphies.reduce((s, st) => s + num(st.unitCost) * num(st.area), 0);
+  const totMaterials = stratigraphies.reduce(
+    (s, st) => s + num(st.unitCost) * num(st.area), 0,
+  );
 
+  Sentry.addBreadcrumb({ category: 'pdf.rda', message: 'cover table', level: 'info' });
   autoTable(pdf, {
-    startY: 110,
+    startY: yCursor + 10,
     head: [['#', 'Nome', 'Area (m²)', '€/m²', 'Totale']],
     body: stratigraphies.map((s, i) => [
       String(i + 1),
-      s.name,
+      s.name || '—',
       num(s.area).toFixed(2),
       euro(num(s.unitCost)),
       euro(num(s.unitCost) * num(s.area)),
@@ -238,34 +406,47 @@ export const exportCompleteRDA = async (
     foot: [['', 'TOTALE', stratigraphies.reduce((sum, s) => sum + num(s.area), 0).toFixed(2), '', euro(totMaterials)]],
     theme: 'striped',
     styles: { fontSize: 9 },
-    headStyles: { fillColor: [40, 80, 130] },
+    headStyles: { fillColor: PRIMARY_RGB },
     footStyles: { fillColor: [220, 230, 240], textColor: 0, fontStyle: 'bold' },
   });
 
   // ========== PAGINE 2..N: DETTAGLIO STRATIGRAFIE ==========
-  for (const strat of stratigraphies) {
+  for (let idx = 0; idx < stratigraphies.length; idx++) {
+    const strat = stratigraphies[idx];
+    Sentry.addBreadcrumb({
+      category: 'pdf.rda',
+      message: 'strat detail',
+      level: 'info',
+      data: { idx, name: strat?.name, area: strat?.area },
+    });
+
     pdf.addPage();
+    const contentY = drawHeader();
+
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(16);
-    pdf.text(strat.name, margin, 25);
+    pdf.setFontSize(15);
+    pdf.text(strat.name || '—', margin, contentY + 8);
 
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(10);
     pdf.setTextColor(80);
-    pdf.text(`Area: ${num(strat.area).toFixed(2)} m² · Costo unitario: ${euro(num(strat.unitCost))}/m² · Totale: ${euro(num(strat.unitCost) * num(strat.area))}`, margin, 32);
+    pdf.text(
+      `Area: ${num(strat.area).toFixed(2)} m² · €/m²: ${euro(num(strat.unitCost))} · Totale: ${euro(num(strat.unitCost) * num(strat.area))}`,
+      margin, contentY + 15,
+    );
     pdf.setTextColor(0);
 
     const layers = getLayersOf(strat);
-    const body = layers.map((layer, idx) => {
+    const body = layers.map((layer, layerIdx) => {
       const mat = getMatOf(layer);
-      if (!mat) return [String(idx + 1), '— (vuoto)', '—', '—', '—'];
+      if (!mat) return [String(layerIdx + 1), '— (vuoto)', '—', '—', '—'];
       const category = CATEGORY_LABEL[String(mat.category ?? '')] ?? String(mat.category ?? '');
       const thickness = num(layer.thickness ?? mat.thickness);
       const name = String(mat.name ?? '—');
       const supplier = String(mat.supplier ?? '');
       const unitPrice = num(mat.unit_price);
       return [
-        String(idx + 1),
+        String(layerIdx + 1),
         category,
         name + (supplier ? ` (${supplier})` : ''),
         thickness > 0 ? `${thickness} mm` : '—',
@@ -274,12 +455,12 @@ export const exportCompleteRDA = async (
     });
 
     autoTable(pdf, {
-      startY: 40,
+      startY: contentY + 22,
       head: [['#', 'Categoria', 'Materiale', 'Spessore', 'Prezzo unitario']],
       body,
       theme: 'striped',
       styles: { fontSize: 8 },
-      headStyles: { fillColor: [40, 80, 130] },
+      headStyles: { fillColor: PRIMARY_RGB },
       columnStyles: {
         0: { cellWidth: 10 },
         1: { cellWidth: 28 },
@@ -288,9 +469,8 @@ export const exportCompleteRDA = async (
       },
     });
 
-    // Costo breakdown (se disponibile)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const finalY = (pdf as any).lastAutoTable?.finalY ?? 100;
+    const finalY = (pdf as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 100;
     if (finalY < pageHeight - 50) {
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(10);
@@ -305,19 +485,28 @@ export const exportCompleteRDA = async (
       pdf.setFontSize(9);
       pdf.text(`Spessore totale: ${totThick.toFixed(1)} mm`, margin, finalY + 18);
       pdf.text(`Costo unitario: ${euro(num(strat.unitCost))}/m²`, margin, finalY + 24);
-      pdf.text(`Costo totale (${num(strat.area).toFixed(2)} m²): ${euro(num(strat.unitCost) * num(strat.area))}`, margin, finalY + 30);
+      pdf.text(
+        `Costo totale (${num(strat.area).toFixed(2)} m²): ${euro(num(strat.unitCost) * num(strat.area))}`,
+        margin, finalY + 30,
+      );
     }
   }
 
-  // ========== PAGINA FINALE: RIEPILOGO MATERIALI DA ACQUISTARE ==========
+  // ========== PAGINA FINALE: RIEPILOGO MATERIALI ==========
+  Sentry.addBreadcrumb({ category: 'pdf.rda', message: 'materials summary', level: 'info' });
   pdf.addPage();
+  const summaryY = drawHeader();
+
   pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(16);
-  pdf.text('Riepilogo materiali da acquistare', margin, 25);
+  pdf.setFontSize(15);
+  pdf.text('Riepilogo materiali da acquistare', margin, summaryY + 8);
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(9);
   pdf.setTextColor(100);
-  pdf.text('Quantità aggregate da tutte le stratigrafie del preventivo, con sfridi applicati.', margin, 32);
+  pdf.text(
+    'Quantità aggregate da tutte le stratigrafie del preventivo, con sfridi applicati.',
+    margin, summaryY + 14,
+  );
   pdf.setTextColor(0);
 
   const aggregated = aggregateMaterials(stratigraphies);
@@ -328,7 +517,7 @@ export const exportCompleteRDA = async (
     grouped.set(m.category, arr);
   }
 
-  let lastY = 38;
+  let lastY = summaryY + 18;
   let totalMaterialsCost = 0;
   for (const category of CATEGORY_ORDER) {
     const items = grouped.get(category);
@@ -339,7 +528,7 @@ export const exportCompleteRDA = async (
     autoTable(pdf, {
       startY: lastY + 4,
       head: [[
-        { content: `${CATEGORY_LABEL[category]} — ${euro(categoryTotal)}`, colSpan: 6, styles: { fillColor: [40, 80, 130], textColor: 255 } },
+        { content: `${CATEGORY_LABEL[category]} — ${euro(categoryTotal)}`, colSpan: 6, styles: { fillColor: PRIMARY_RGB, textColor: 255 } },
       ], ['Materiale', 'Codice', 'Fornitore', 'Sfrido', 'Qtà acquisto', 'Costo']],
       body: items.map(i => [
         i.name,
@@ -351,25 +540,25 @@ export const exportCompleteRDA = async (
       ]),
       theme: 'striped',
       styles: { fontSize: 8 },
-      headStyles: { fillColor: [80, 120, 170], textColor: 255 },
+      headStyles: { fillColor: SECONDARY_RGB, textColor: 255 },
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    lastY = (pdf as any).lastAutoTable?.finalY ?? lastY;
+    lastY = (pdf as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? lastY;
 
-    if (lastY > pageHeight - 40) {
+    if (lastY > pageHeight - 50) {
       pdf.addPage();
-      lastY = 20;
+      lastY = drawHeader();
     }
   }
 
   // ========== SOMMARIO FINALE ==========
-  if (lastY > pageHeight - 60) {
+  if (lastY > pageHeight - 80) {
     pdf.addPage();
-    lastY = 20;
+    lastY = drawHeader();
   }
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(12);
-  pdf.text('Sommario costi', margin, lastY + 15);
+  pdf.text('Sommario costi totali', margin, lastY + 15);
 
   const totLabor = stratigraphies.reduce((sum, s) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -389,7 +578,7 @@ export const exportCompleteRDA = async (
     startY: lastY + 20,
     head: [['Voce', 'Importo']],
     body: [
-      ['Materiali (da acquistare con sfridi)', euro(totMaterialsCost)],
+      ['Materiali (con sfridi)', euro(totMaterialsCost)],
       ['Manodopera', euro(totLabor)],
       ...(totFinish > 0 ? [['Finitura', euro(totFinish)] as [string, string]] : []),
     ],
@@ -397,22 +586,23 @@ export const exportCompleteRDA = async (
     theme: 'plain',
     styles: { fontSize: 11 },
     headStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold' },
-    footStyles: { fillColor: [40, 80, 130], textColor: 255, fontStyle: 'bold', fontSize: 13 },
+    footStyles: { fillColor: PRIMARY_RGB, textColor: 255, fontStyle: 'bold', fontSize: 13 },
     columnStyles: {
       0: { cellWidth: 100 },
       1: { halign: 'right' },
     },
   });
 
-  // Footer su tutte le pagine
+  // ========== FOOTER su tutte le pagine ==========
   const pageCount = pdf.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     pdf.setPage(i);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(8);
     pdf.setTextColor(150);
+    const orgName = org?.company_name || org?.name || 'DryConfig';
     pdf.text(
-      `Pagina ${i} di ${pageCount} · Generato da DryConfig · ${new Date().toLocaleDateString('it-IT')}`,
+      `Pagina ${i} di ${pageCount} · ${orgName} · Generato con DryConfig · ${new Date().toLocaleDateString('it-IT')}`,
       pageWidth / 2,
       pageHeight - 8,
       { align: 'center' },
@@ -420,7 +610,8 @@ export const exportCompleteRDA = async (
     pdf.setTextColor(0);
   }
 
-  // Salva
-  const safeName = estimate.name.replace(/[^a-z0-9_-]/gi, '_');
+  // ========== Salva ==========
+  Sentry.addBreadcrumb({ category: 'pdf.rda', message: 'save', level: 'info' });
+  const safeName = (estimate.name || 'preventivo').replace(/[^a-z0-9_-]/gi, '_');
   pdf.save(`preventivo_${safeName}.pdf`);
 };

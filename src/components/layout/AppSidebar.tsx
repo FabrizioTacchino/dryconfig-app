@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FolderOpen, Wrench, Package, Users, Upload, Truck } from 'lucide-react';
+import { LayoutDashboard, FolderOpen, Wrench, Package, Users, Upload, Truck, Building2 } from 'lucide-react';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { useCurrentOrganization } from '@/contexts/OrganizationContext';
 import { useHasFeature } from '@/hooks/useOrgPlan';
@@ -36,6 +36,10 @@ const AppSidebar = () => {
     name: 'Importa listino',
     href: '/materials/import',
     icon: Upload
+  }] : []), ...(canManageTeam ? [{
+    name: 'Organizzazione',
+    href: '/settings/organization',
+    icon: Building2
   }] : []), ...(canManageTeam ? [{
     name: 'Fornitori',
     href: '/settings/suppliers',
