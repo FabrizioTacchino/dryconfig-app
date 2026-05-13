@@ -572,13 +572,13 @@ export const exportCompleteRDA = async (
     if (f == null) return sum;
     return sum + num(f) * num(s.area);
   }, 0);
-  const totGen = totMaterialsCost + totLabor + totFinish;
+  const totGen = totalMaterialsCost + totLabor + totFinish;
 
   autoTable(pdf, {
     startY: lastY + 20,
     head: [['Voce', 'Importo']],
     body: [
-      ['Materiali (con sfridi)', euro(totMaterialsCost)],
+      ['Materiali (con sfridi)', euro(totalMaterialsCost)],
       ['Manodopera', euro(totLabor)],
       ...(totFinish > 0 ? [['Finitura', euro(totFinish)] as [string, string]] : []),
     ],
