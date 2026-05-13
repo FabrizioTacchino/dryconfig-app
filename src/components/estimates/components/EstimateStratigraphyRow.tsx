@@ -158,7 +158,42 @@ const EstimateStratigraphyRow = ({
           </div>
         )}
       </TableCell>
-      
+
+      {/* F32: altezza parete. Editabile in modalita` modifica. NULL = fallback 2.7m
+          in useMaterialsSummary. Cambia solo il calcolo pezzi lastre nel
+          riepilogo materiali, non il €/m² del preventivo. */}
+      <TableCell>
+        {isEditing ? (
+          <div className="space-y-1">
+            <Input
+              type="number"
+              value={editData.wallHeight ?? ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                onEditDataChange({
+                  ...editData,
+                  wallHeight: v === '' ? null : Number(v),
+                });
+              }}
+              className="w-20 font-mono"
+              min="0.5"
+              max="10"
+              step="0.1"
+              placeholder="2.7"
+            />
+            <div className="text-[10px] text-muted-foreground leading-tight">
+              Default 2.7m
+            </div>
+          </div>
+        ) : (
+          <div className="font-mono text-sm">
+            {(item as { wallHeight?: number }).wallHeight != null
+              ? (item as { wallHeight: number }).wallHeight.toFixed(2)
+              : <span className="text-muted-foreground italic">2.70</span>}
+          </div>
+        )}
+      </TableCell>
+
       <TableCell>
         {isEditing && isOrphan ? (
           <div className="space-y-1">

@@ -68,6 +68,9 @@ const EstimateStratigraphiesTable = ({
       // originalStratigraphyId è null. Per le altre row il campo è incluso
       // ma ignorato dalla UI (read-only display).
       unitCost: stratigraphy.unitCost,
+      // F32: altezza parete (in metri). Se non valorizzata nel DB, mostriamo
+      // 2.7 come placeholder. Il salvataggio passa via wall_height in DB.
+      wallHeight: (stratigraphy as { wallHeight?: number }).wallHeight ?? null,
     });
   };
 
@@ -118,6 +121,9 @@ const EstimateStratigraphiesTable = ({
               onClick={() => handleSort('area')}
             >
               Superficie (m²) {getSortIcon('area')}
+            </TableHead>
+            <TableHead title="Altezza parete in metri — usata per calcolare i pezzi reali delle lastre nel riepilogo materiali">
+              Altezza (m)
             </TableHead>
             <TableHead
               role="button"

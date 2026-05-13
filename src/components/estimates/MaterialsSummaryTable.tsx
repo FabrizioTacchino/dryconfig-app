@@ -4,7 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Search, FileSpreadsheet, FileText, Package, ArrowUpDown } from 'lucide-react';
+import { Search, FileSpreadsheet, FileText, Package, ArrowUpDown, AlertTriangle } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { MaterialSummaryItem } from '@/hooks/useMaterialsSummary';
 import { exportMaterialsSummaryToExcel } from '@/utils/export/exportMaterialsSummaryExcel';
 import { exportMaterialsSummaryToPDF } from '@/utils/export/exportMaterialsSummaryPDF';
@@ -249,7 +250,30 @@ const MaterialsSummaryTable = ({
                 </TableCell>
                 <TableCell>
                   <div>
-                    <div className="font-medium">{material.materialName}</div>
+                    <div className="font-medium flex items-center gap-1.5 flex-wrap">
+                      <span>{material.materialName}</span>
+                      {/* F32: warning giunto orizzontale necessario. */}
+                      {material.hasHorizontalJoint && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] gap-1 bg-amber-50 text-amber-800 border-amber-300 cursor-help"
+                              >
+                                <AlertTriangle className="h-3 w-3" />
+                                Giunto orizzontale
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              Il foglio scelto è più corto dell'altezza parete: il posatore
+                              dovrà fare almeno una giunzione orizzontale. Se possibile,
+                              scegli un formato più alto nel catalogo per evitare il giunto.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                    </div>
                     <div className="text-sm text-muted-foreground">
                       {material.materialCode && `Cod: ${material.materialCode}`}
                     </div>

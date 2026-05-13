@@ -85,6 +85,10 @@ export const useUpdateEstimateStratigraphy = (estimateStratigraphies: EstimateSt
         'unitCost',
         'totalCost',
         'pricesUpdatedAt',
+        // F32 Step 3: editing altezza parete post-add. Cambia il numero di
+        // pezzi reali nel riepilogo materiali (useMaterialsSummary) ma NON
+        // tocca unit_cost €/m² del preventivo (la "linea rossa").
+        'wallHeight',
       ];
       let sanitizedData: any = {};
       for (const k of allowedFields) {
