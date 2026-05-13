@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FolderOpen, Wrench, Package, Users, Upload, Truck, Building2 } from 'lucide-react';
+import { LayoutDashboard, FolderOpen, Wrench, Package, Users, Upload, Truck, Building2, UserSquare2 } from 'lucide-react';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { useCurrentOrganization } from '@/contexts/OrganizationContext';
 import { useHasFeature } from '@/hooks/useOrgPlan';
@@ -24,6 +24,10 @@ const AppSidebar = () => {
     name: 'Progetti',
     href: '/projects',
     icon: FolderOpen
+  }, {
+    name: 'Clienti',
+    href: '/customers',
+    icon: UserSquare2
   }, {
     name: 'Configuratore',
     href: '/configurator',

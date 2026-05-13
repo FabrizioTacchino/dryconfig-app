@@ -24,6 +24,7 @@ import AcceptInvite from "./pages/AcceptInvite";
 import MaterialsImport from "./pages/MaterialsImport";
 import Suppliers from "./pages/Suppliers";
 import OrganizationSettings from "./pages/OrganizationSettings";
+import Customers from "./pages/Customers";
 import NotFound from "./pages/NotFound";
 import { Sentry } from "@/lib/sentry";
 import { ErrorFallback } from "@/components/error/ErrorFallback";
@@ -114,6 +115,11 @@ const App = () => {
                 <Route path="/settings/organization" element={
                   <ProtectedRoute>
                     <OrganizationSettings />
+                  </ProtectedRoute>
+                } />
+                <Route path="/customers" element={
+                  <ProtectedRoute>
+                    <Customers />
                   </ProtectedRoute>
                 } />
                 <Route path="/invite/:token" element={<AcceptInvite />} />
