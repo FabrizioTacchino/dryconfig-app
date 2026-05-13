@@ -32,6 +32,13 @@ export interface MaterialSummaryItem {
   /** FK suppliers.id (F31): serve per raggruppare l'ordine fornitore. */
   supplierId?: string | null;
   category: string;
+  /**
+   * F32: true se almeno una delle stratigrafie che usa questo materiale ha
+   * altezza parete > lunghezza foglio. In quel caso il posatore dovra` fare
+   * un giunto orizzontale (caso che si vorrebbe evitare). La UI mostra un
+   * warning informativo.
+   */
+  hasHorizontalJoint?: boolean;
   /** Unità d'acquisto (es. 'scatola', 'mq', 'ml', 'pz'). */
   unit: string;
   /** Prezzo nella unità d'acquisto (es. €/scatola per le viti). Netto/scontato. */
@@ -85,15 +92,29 @@ interface MaterialAccumulator {
   wastePercentage: number;
   stratigraphyNames: string[];
   /**
-   * F32: true per le lastre con width+length valorizzati e unit='mq'. In
-   * fase 2 il consumo (in m²) viene convertito in pezzi interi con
-   * ceil(m² / area_foglio). Se false → formula attuale invariata.
+   * F32: true per le lastre con width+length valorizzati e unit='mq'.
+   * In fase 2 il valore di `sheetPiecesTheoretical` (già calcolato in
+   * fase 1 per stratigrafia) diventa la quantità d'acquisto in pezzi
+   * interi. Se false → formula classica m² invariata.
    */
   isSheetBased?: boolean;
   /** F32: area del singolo foglio in m² (es. lastra 1200×3000 → 3.6). */
   sheetAreaMq?: number;
   /** F32: prezzo €/foglio = unit_price (€/m²) × sheetAreaMq. */
   pricePerSheet?: number;
+  /**
+   * F32: pezzi accumulati per le sheet-based, calcolati per stratigrafia
+   * con la regola "no giunti orizzontali":
+   *   pezzi = ceil(lunghezza_parete / sheet_width) × ceil(H / sheet_length)
+   * Ogni stratigrafia può avere H diversa → calcolo locale poi sommo. Cosi`
+   * 100 m² di parete H=2.7 + 50 m² di parete H=3 si comportano correttamente.
+   */
+  sheetPiecesTheoretical?: number;
+  /**
+   * F32: true se in almeno una stratigrafia l'altezza parete supera la
+   * lunghezza del foglio (richiede giunto orizzontale = caso da evitare).
+   */
+  hasHorizontalJoint?: boolean;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -192,6 +213,26 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
           }));
           a.theoreticalQuantity += theoreticalQty;
           if (!a.stratigraphyNames.includes(estStrat.name)) a.stratigraphyNames.push(estStrat.name);
+
+          // F32: per le sheet-based calcoliamo i pezzi PER QUESTA stratigrafia
+          // applicando la regola "no giunti orizzontali":
+          //   lunghezza_parete = area / wall_height
+          //   pezzi_per_riga  = ceil(lunghezza_parete / sheet_width)
+          //   stack_verticali = ceil(wall_height / sheet_length)  // 1 se foglio coprente
+          //   pezzi_strato    = pezzi_per_riga × stack_verticali × incidence
+          // L'accumulo viene fatto su `sheetPiecesTheoretical` cosi` stratigrafie
+          // con H diverse non si pestano tra loro.
+          if (isSheetBasedCandidate && sheetAreaMq && sheetAreaMq > 0) {
+            const sheetW_m = widthMm / 1000;
+            const sheetH_m = lengthMm / 1000;
+            const safeH = Math.max(wallHeight, 0.5); // evita div/0 in caso di valori assurdi
+            const wallLengthM = estStrat.area / safeH;
+            const piecesPerRow = Math.max(1, Math.ceil(wallLengthM / sheetW_m));
+            const verticalStacks = Math.max(1, Math.ceil(safeH / sheetH_m));
+            const piecesForThisStrat = piecesPerRow * verticalStacks * incidence;
+            a.sheetPiecesTheoretical = (a.sheetPiecesTheoretical ?? 0) + piecesForThisStrat;
+            if (verticalStacks > 1) a.hasHorizontalJoint = true;
+          }
         }
 
         // === VITI del layer ===
@@ -275,17 +316,22 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
       let totalCost: number;
       let pieces: number | undefined;
 
-      if (a.isSheetBased && a.sheetAreaMq && a.sheetAreaMq > 0 && a.pricePerSheet) {
-        // F32: vendita a foglio (lastra / ceiling_tile con dimensioni note).
-        // Converte m² teorici → pezzi interi via ceil, applicando lo sfrido %
-        // PRIMA del ceil così il posatore conservatore ottiene 1-2 lastre di
-        // scorta quando lo sfrido categoria è > 0. Costo finale = pezzi ×
-        // (unit_price €/m² × area_foglio m²).
-        const mqWithWaste = a.theoreticalQuantity * wasteMultiplier;
-        totalQuantity = Math.ceil(mqWithWaste / a.sheetAreaMq);
+      if (
+        a.isSheetBased && a.sheetAreaMq && a.sheetAreaMq > 0 &&
+        a.pricePerSheet && a.sheetPiecesTheoretical && a.sheetPiecesTheoretical > 0
+      ) {
+        // F32: vendita a foglio "regola posatore" — i pezzi sono già calcolati
+        // in fase 1 con la formula corretta (no giunti orizzontali quando
+        // possibile, una lastra intera in altezza). Qui applichiamo solo lo
+        // sfrido categoria come scorta extra e arrotondiamo a lastre intere.
+        // Lo sfrido per le sheet-based è normalmente piccolo (es. 2-5%) perchè
+        // lo sfrido principale (lastre intere > area parete) è già implicito
+        // nel ceil delle dimensioni.
+        const piecesWithWaste = a.sheetPiecesTheoretical * wasteMultiplier;
+        totalQuantity = Math.ceil(piecesWithWaste);
         totalCost = Math.round(totalQuantity * a.pricePerSheet * 100) / 100;
-        // Pezzi teorici (pre-sfrido) — info utile a video / PDF.
-        pieces = Math.ceil(a.theoreticalQuantity / a.sheetAreaMq);
+        // Pezzi "teorici" (pre-sfrido) — info utile a video / PDF.
+        pieces = a.sheetPiecesTheoretical;
       } else if (a.isPackaged && a.boxPieces && a.boxPieces > 0) {
         // Vendita a scatola: somma pezzi → ceil su scatole intere UNA SOLA volta.
         const totalPiecesTheo = a.totalPieces ?? a.theoreticalQuantity;
@@ -325,6 +371,7 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
         theoreticalQuantity: a.theoreticalQuantity,
         wastePercentage: a.wastePercentage,
         stratigraphyNames: a.stratigraphyNames,
+        hasHorizontalJoint: a.hasHorizontalJoint,
       });
     }
 
