@@ -84,6 +84,16 @@ interface MaterialAccumulator {
   usageUnit: string;
   wastePercentage: number;
   stratigraphyNames: string[];
+  /**
+   * F32: true per le lastre con width+length valorizzati e unit='mq'. In
+   * fase 2 il consumo (in m²) viene convertito in pezzi interi con
+   * ceil(m² / area_foglio). Se false → formula attuale invariata.
+   */
+  isSheetBased?: boolean;
+  /** F32: area del singolo foglio in m² (es. lastra 1200×3000 → 3.6). */
+  sheetAreaMq?: number;
+  /** F32: prezzo €/foglio = unit_price (€/m²) × sheetAreaMq. */
+  pricePerSheet?: number;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -138,6 +148,25 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
           const matKey = `${material.id}_${material.category}`;
           const matUnit = String(material.unit ?? 'mq').toLowerCase().trim();
           const matBox = Number(material.box_pieces ?? 0);
+          // F32: rilevamento "vendita a foglio" per le lastre (e ceiling_tile).
+          // Si attiva solo se ho dimensioni reali del foglio E unit='mq'. Senza
+          // dimensioni il fallback è la formula classica (theoreticalQty in m²,
+          // sfrido %, € = m² × prezzo), garantendo zero regressioni sui 43 mat
+          // del catalogo senza width/length e su tutti gli snapshot pre-F32.
+          const widthMm = Number(material.width ?? 0);
+          const lengthMm = Number(material.length ?? 0);
+          const isSheetBasedCandidate =
+            (material.category === 'board' || material.category === 'ceiling_tile') &&
+            matUnit === 'mq' &&
+            widthMm > 0 && lengthMm > 0;
+          const sheetAreaMq = isSheetBasedCandidate
+            ? (widthMm * lengthMm) / 1_000_000
+            : undefined;
+          const matUnitPrice = Number(material.unit_price ?? 0);
+          const pricePerSheet = (isSheetBasedCandidate && sheetAreaMq)
+            ? matUnitPrice * sheetAreaMq
+            : undefined;
+
           const a = ensureAcc(matKey, () => ({
             materialId: material.id,
             materialName: material.name,
@@ -146,14 +175,20 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
             supplier: material.supplier || '',
             supplierId: material.supplier_id ?? null,
             category: CATEGORY_LABELS[material.category] || material.category,
-            unit: (matUnit === 'scatola' && matBox > 0) ? 'scatola' : matUnit,
-            unitPrice: Number(material.unit_price ?? 0),
+            // Se sheet-based: unit d'acquisto = 'pz'. Altrimenti come prima.
+            unit: isSheetBasedCandidate
+              ? 'pz'
+              : ((matUnit === 'scatola' && matBox > 0) ? 'scatola' : matUnit),
+            unitPrice: matUnitPrice,
             isPackaged: matUnit === 'scatola' && matBox > 0,
             boxPieces: matBox > 0 ? matBox : undefined,
             theoreticalQuantity: 0,
-            usageUnit: matUnit,
+            usageUnit: matUnit, // m² consumati teorici (resta in m²)
             wastePercentage: resolveWaste(material, wasteMap),
             stratigraphyNames: [],
+            isSheetBased: isSheetBasedCandidate,
+            sheetAreaMq,
+            pricePerSheet,
           }));
           a.theoreticalQuantity += theoreticalQty;
           if (!a.stratigraphyNames.includes(estStrat.name)) a.stratigraphyNames.push(estStrat.name);
@@ -240,7 +275,18 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
       let totalCost: number;
       let pieces: number | undefined;
 
-      if (a.isPackaged && a.boxPieces && a.boxPieces > 0) {
+      if (a.isSheetBased && a.sheetAreaMq && a.sheetAreaMq > 0 && a.pricePerSheet) {
+        // F32: vendita a foglio (lastra / ceiling_tile con dimensioni note).
+        // Converte m² teorici → pezzi interi via ceil, applicando lo sfrido %
+        // PRIMA del ceil così il posatore conservatore ottiene 1-2 lastre di
+        // scorta quando lo sfrido categoria è > 0. Costo finale = pezzi ×
+        // (unit_price €/m² × area_foglio m²).
+        const mqWithWaste = a.theoreticalQuantity * wasteMultiplier;
+        totalQuantity = Math.ceil(mqWithWaste / a.sheetAreaMq);
+        totalCost = Math.round(totalQuantity * a.pricePerSheet * 100) / 100;
+        // Pezzi teorici (pre-sfrido) — info utile a video / PDF.
+        pieces = Math.ceil(a.theoreticalQuantity / a.sheetAreaMq);
+      } else if (a.isPackaged && a.boxPieces && a.boxPieces > 0) {
         // Vendita a scatola: somma pezzi → ceil su scatole intere UNA SOLA volta.
         const totalPiecesTheo = a.totalPieces ?? a.theoreticalQuantity;
         const piecesWithWaste = totalPiecesTheo * wasteMultiplier;
@@ -255,6 +301,13 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
         if (a.totalPieces !== undefined) pieces = a.totalPieces;
       }
 
+      // F32: per le lastre sheet-based esponiamo il prezzo €/foglio (utile a
+      // video/PDF: "8 pz × 59,84 €/pz"). Per gli altri materiali resta il
+      // prezzo nell'unità d'acquisto storica (es. €/scatola, €/m²).
+      const displayUnitPrice = (a.isSheetBased && a.pricePerSheet)
+        ? Math.round(a.pricePerSheet * 100) / 100
+        : a.unitPrice;
+
       items.push({
         materialId: a.materialId,
         materialName: a.materialName,
@@ -264,7 +317,7 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
         supplierId: a.supplierId,
         category: a.category,
         unit: a.unit,
-        unitPrice: a.unitPrice,
+        unitPrice: displayUnitPrice,
         totalQuantity,
         totalCost,
         piecesUsed: pieces,

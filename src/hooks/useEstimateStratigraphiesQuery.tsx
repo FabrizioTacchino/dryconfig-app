@@ -155,6 +155,9 @@ export const useEstimateStratigraphiesQuery = (estimateId?: string) => {
             stratigraphyData: item.stratigraphy_data,
             layersData: item.layers_data,
             pricesUpdatedAt: item.prices_updated_at ? new Date(item.prices_updated_at) : undefined,
+            // F32: altezza parete dichiarata. Per le righe pre-F32 puo` essere
+            // NULL → useMaterialsSummary applica fallback 2.7m.
+            wallHeight: (item as any).wall_height != null ? Number((item as any).wall_height) : undefined,
             isSnapshot: true,
             originalStratigraphyId: item.original_stratigraphy_id,
             finishLevel: (item as any).finish_level ?? null,
@@ -181,6 +184,9 @@ export const useEstimateStratigraphiesQuery = (estimateId?: string) => {
             stratigraphyData: item.stratigraphy_data,
             layersData: item.layers_data,
             pricesUpdatedAt: item.prices_updated_at ? new Date(item.prices_updated_at) : undefined,
+            // F32: altezza parete dichiarata. Per le righe pre-F32 puo` essere
+            // NULL → useMaterialsSummary applica fallback 2.7m.
+            wallHeight: (item as any).wall_height != null ? Number((item as any).wall_height) : undefined,
             isSnapshot: item.is_snapshot || false,
             originalStratigraphyId: item.original_stratigraphy_id,
             finishLevel: (item as any).finish_level ?? null,

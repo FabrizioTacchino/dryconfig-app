@@ -248,6 +248,11 @@ export const useCreateEstimateStratigraphy = () => {
           quantity: data.quantity || 1,
           unit_cost: finalUnitCost,
           total_cost: totalCost,
+          // F32: persistiamo l'altezza parete dichiarata nel dialog. Serve
+          // a useMaterialsSummary per il calcolo delle guide e (in futuro)
+          // per il warning "altezza > lunghezza foglio = giunto orizzontale".
+          // Bug pre-F32: il valore veniva raccolto ma mai scritto su DB.
+          wall_height: data.wallHeight ?? null,
           // F7.7: livello + costo + snapshot BOM (per recalcolo prezzi futuro)
           finish_level: finishLevelCode ?? null,
           finish_cost_per_sqm: finishCostPerSqm,
