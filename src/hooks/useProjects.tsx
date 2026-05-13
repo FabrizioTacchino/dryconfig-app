@@ -11,6 +11,8 @@ interface CreateProjectData {
   name: string;
   client: string;
   description?: string;
+  /** F28: FK al cliente in anagrafica (opzionale per retro-compat). */
+  customer_id?: string | null;
 }
 
 export const useProjects = () => {
@@ -58,16 +60,21 @@ export const useProjects = () => {
     mutationFn: async (projectData: CreateProjectData) => {
       if (!user) throw new Error('User not authenticated');
 
+      const insertPayload: Record<string, unknown> = {
+        name: projectData.name,
+        client: projectData.client,
+        description: projectData.description,
+        user_id: user.id,
+        organization_id: currentOrganizationId ?? undefined,
+        status: 'active',
+      };
+      if (projectData.customer_id !== undefined) {
+        insertPayload.customer_id = projectData.customer_id;
+      }
       const { data, error } = await supabase
         .from('projects')
-        .insert({
-          name: projectData.name,
-          client: projectData.client,
-          description: projectData.description,
-          user_id: user.id,
-          organization_id: currentOrganizationId ?? undefined,
-          status: 'active'
-        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .insert(insertPayload as any)
         .select()
         .single();
 

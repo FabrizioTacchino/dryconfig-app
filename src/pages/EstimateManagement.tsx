@@ -9,6 +9,7 @@ import EstimateHeader from '@/components/estimates/EstimateHeader';
 import EstimateStratiSummaryCards from '@/components/estimates/EstimateStratiSummaryCards';
 import EstimateStratigraphiesSection from '@/components/estimates/EstimateStratigraphiesSection';
 import MaterialsSummaryCard from '@/components/estimates/MaterialsSummaryCard';
+import SellingPriceCard from '@/components/estimates/SellingPriceCard';
 import EstimateLoadingState from '@/components/estimates/EstimateLoadingState';
 import EstimateErrorState from '@/components/estimates/EstimateErrorState';
 
@@ -69,8 +70,10 @@ const EstimateManagement = () => {
               isUpdatingPrices={isUpdatingPrices}
             />
 
-            <MaterialsSummaryCard 
-              stratigraphies={estimateStratigraphies} 
+            <SellingPriceCard stratigraphies={estimateStratigraphies} />
+
+            <MaterialsSummaryCard
+              stratigraphies={estimateStratigraphies}
               estimateName={estimate.name}
               estimate={estimate}
             />
