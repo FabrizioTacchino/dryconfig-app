@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Database } from '@/integrations/supabase/types';
+import { setSentryOrg } from '@/lib/sentry';
 
 export type OrganizationRole = Database['public']['Enums']['organization_role'];
 
@@ -123,6 +124,12 @@ export const OrganizationProvider = ({ children }: { children: React.ReactNode }
       refresh: async () => { await refetch(); },
     };
   }, [memberships, selectedOrgId, isLoading]);
+
+  // Sentry: tagga l'org corrente sulla sessione errori per filtrare bug
+  // per organizzazione in dashboard.
+  useEffect(() => {
+    setSentryOrg(value.currentOrganizationId, value.currentOrganization?.name ?? null);
+  }, [value.currentOrganizationId, value.currentOrganization?.name]);
 
   return <OrganizationContext.Provider value={value}>{children}</OrganizationContext.Provider>;
 };

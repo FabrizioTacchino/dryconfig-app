@@ -24,6 +24,8 @@ import AcceptInvite from "./pages/AcceptInvite";
 import MaterialsImport from "./pages/MaterialsImport";
 import Suppliers from "./pages/Suppliers";
 import NotFound from "./pages/NotFound";
+import { Sentry } from "@/lib/sentry";
+import { ErrorFallback } from "@/components/error/ErrorFallback";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,6 +38,11 @@ const queryClient = new QueryClient({
 
 const App = () => {
   return (
+    <Sentry.ErrorBoundary
+      fallback={({ error, resetError }) => (
+        <ErrorFallback error={error} resetError={resetError} />
+      )}
+    >
     <QueryClientProvider client={queryClient}>
       <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="dryconfig-theme">
       <AuthProvider>
@@ -120,6 +127,7 @@ const App = () => {
       </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
+    </Sentry.ErrorBoundary>
   );
 };
 

@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -11,8 +12,23 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
-    mode === 'development' &&
-    componentTagger(),
+    mode === 'development' && componentTagger(),
+    // Sentry source maps upload: attivo SOLO in build prod e SOLO se
+    // SENTRY_AUTH_TOKEN è impostato (su Vercel come secret). Senza,
+    // il build passa lo stesso ma le stack trace su Sentry restano minified.
+    mode === 'production' && process.env.SENTRY_AUTH_TOKEN && sentryVitePlugin({
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      // Carica i source maps ma non li espone in produzione (rimossi a fine
+      // build dal plugin stesso quando `sourcemaps.assets` non è custom).
+      sourcemaps: {
+        assets: './dist/**',
+      },
+      release: {
+        name: process.env.VERCEL_GIT_COMMIT_SHA,
+      },
+    }),
   ].filter(Boolean),
   resolve: {
     alias: {
@@ -20,6 +36,9 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
+    // Source maps necessari per Sentry — il plugin sopra li carica e poi il
+    // server di Vercel non li serve perché restano nella dist locale del build.
+    sourcemap: true,
     // Spezziamo le dipendenze pesanti in chunk vendor separati per migliorare
     // il time-to-interactive iniziale (oggi index.js ~2.5MB → ~700kB gzip).
     rollupOptions: {
