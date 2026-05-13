@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   ArrowLeft, Pencil, X, Check, FileText, FileStack, ChevronDown,
-  Send, Trophy, XCircle, Undo2, AlertTriangle,
+  Send, Trophy, XCircle, Undo2, AlertTriangle, ShoppingCart,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -31,6 +31,7 @@ import { useEstimates } from '@/hooks/useEstimates';
 import EstimateNotesField from "./EstimateNotesField";
 import { useEstimateNotes } from "@/hooks/useEstimateNotes";
 import { useOrgProfile } from "@/hooks/useOrgSettings";
+import { useMaterialsSummary } from "@/hooks/useMaterialsSummary";
 import { Sentry } from "@/lib/sentry";
 import { isEstimateLocked } from '@/utils/estimates/estimateLock';
 
@@ -59,6 +60,9 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
   const { data: orgProfile } = useOrgProfile();
   const generateOfferNumber = useGenerateOfferNumber();
+  // F31: usato dall'export "Ordine al fornitore". Stessa fonte del riepilogo
+  // materiali a video → coerenza prezzi/quantità garantita.
+  const { materialsSummary } = useMaterialsSummary(stratigraphies);
 
   const status = estimate.status;
   const locked = isEstimateLocked(status);
@@ -92,15 +96,24 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
 
   /**
    * Genera (o legge) il numero offerta e poi esegue l'export.
-   * Variant: 'sintetico' = preventivo cliente, 'completo' = preventivo cantiere/tecnico.
+   * Variant:
+   *  - 'sintetico'        → preventivo cliente
+   *  - 'completo'         → preventivo cantiere/tecnico
+   *  - 'ordine_fornitori' → lista materiali raggruppata per supplier (F31)
+   *
+   * L'ordine al fornitore non ha bisogno del numero offerta (è interno) ma
+   * lo riportiamo se gia` presente per tracciabilita`.
    */
-  const handleExportOffer = async (variant: 'sintetico' | 'completo') => {
+  const handleExportOffer = async (
+    variant: 'sintetico' | 'completo' | 'ordine_fornitori',
+  ) => {
     if (isExportingRDA) return;
     setIsExportingRDA(true);
     try {
+      const needsOfferNumber = variant !== 'ordine_fornitori';
       let offerNumber = estimate.offerNumber as string | null | undefined;
       let issuedAt = estimate.offerIssuedAt as Date | null | undefined;
-      if (!offerNumber) {
+      if (needsOfferNumber && !offerNumber) {
         const info = await generateOfferNumber.mutateAsync(estimate.id);
         offerNumber = info.offer_number;
         issuedAt = new Date();
@@ -118,12 +131,23 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
           stratigraphies,
           org: orgProfile ?? null,
         });
-      } else {
+      } else if (variant === 'completo') {
         await exp.exportCompleteRDA(enrichedEstimate, stratigraphies, orgProfile ?? null);
+      } else {
+        await exp.exportSupplierOrder({
+          estimate: enrichedEstimate,
+          materials: materialsSummary,
+          org: orgProfile ?? null,
+        });
       }
+      const labels: Record<typeof variant, string> = {
+        sintetico: 'Preventivo Sintetico',
+        completo: 'Preventivo Completo',
+        ordine_fornitori: 'Ordine ai fornitori',
+      };
       toast({
-        title: `Preventivo ${variant === 'sintetico' ? 'Sintetico' : 'Completo'} generato`,
-        description: offerNumber
+        title: `${labels[variant]} generato`,
+        description: offerNumber && needsOfferNumber
           ? `Numero offerta: ${offerNumber}`
           : 'Documento scaricato',
       });
@@ -138,7 +162,7 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
       });
       const errMsg = error instanceof Error ? error.message : String(error);
       toast({
-        title: 'Errore generazione preventivo',
+        title: 'Errore generazione documento',
         description: errMsg.slice(0, 200),
         variant: 'destructive',
       });
@@ -330,6 +354,16 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
                     <span className="font-medium">Preventivo Completo</span>
                     <span className="text-xs text-muted-foreground">
                       Per il cantiere · composizione + acquisti + tutto
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => handleExportOffer('ordine_fornitori')}>
+                  <ShoppingCart className="h-4 w-4 mr-2 text-orange-600" />
+                  <div className="flex flex-col">
+                    <span className="font-medium">Ordine ai fornitori</span>
+                    <span className="text-xs text-muted-foreground">
+                      Da inviare al rappresentante · raggruppato per fornitore
                     </span>
                   </div>
                 </DropdownMenuItem>

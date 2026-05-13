@@ -25,7 +25,12 @@ export interface MaterialSummaryItem {
   materialId: string;
   materialName: string;
   materialCode: string;
+  /** EAN/GTIN per scansione barcode dal magazziniere fornitore (F31). */
+  ean?: string | null;
+  /** Nome supplier (legacy testo). Tenuto per backwards-compat. */
   supplier: string;
+  /** FK suppliers.id (F31): serve per raggruppare l'ordine fornitore. */
+  supplierId?: string | null;
   category: string;
   /** Unità d'acquisto (es. 'scatola', 'mq', 'ml', 'pz'). */
   unit: string;
@@ -59,7 +64,9 @@ interface MaterialAccumulator {
   materialId: string;
   materialName: string;
   materialCode: string;
+  ean?: string | null;
   supplier: string;
+  supplierId?: string | null;
   category: string;
   /** Unità d'acquisto. */
   unit: string;
@@ -135,7 +142,9 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
             materialId: material.id,
             materialName: material.name,
             materialCode: material.code || '',
+            ean: material.ean_code ?? null,
             supplier: material.supplier || '',
+            supplierId: material.supplier_id ?? null,
             category: CATEGORY_LABELS[material.category] || material.category,
             unit: (matUnit === 'scatola' && matBox > 0) ? 'scatola' : matUnit,
             unitPrice: Number(material.unit_price ?? 0),
@@ -162,7 +171,9 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
             materialId: screw.id,
             materialName: screw.name,
             materialCode: screw.code || '',
+            ean: screw.ean_code ?? null,
             supplier: screw.supplier || '',
+            supplierId: screw.supplier_id ?? null,
             category: 'Viti',
             unit: (screwUnit === 'scatola' && boxPieces > 0) ? 'scatola' : (screwUnit || 'pz'),
             unitPrice: Number(screw.unit_price ?? 0),
@@ -199,7 +210,9 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
           materialId: matId,
           materialName: (comp.material_name as string) || 'Componente finitura',
           materialCode: (comp.material_code as string) || '',
+          ean: (comp.material_ean as string | null) ?? null,
           supplier: (comp.material_supplier as string) || '',
+          supplierId: (comp.material_supplier_id as string | null) ?? null,
           category: 'Finitura',
           unit: (matUnit === 'scatola' && box > 0) ? 'scatola' : (matUnit || 'pz'),
           unitPrice: Number(comp.unit_price ?? 0),
@@ -246,7 +259,9 @@ export const useMaterialsSummary = (estimateStratigraphies: (EstimateStratigraph
         materialId: a.materialId,
         materialName: a.materialName,
         materialCode: a.materialCode,
+        ean: a.ean,
         supplier: a.supplier,
+        supplierId: a.supplierId,
         category: a.category,
         unit: a.unit,
         unitPrice: a.unitPrice,

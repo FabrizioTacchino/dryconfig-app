@@ -30,7 +30,7 @@ export function sanitizeFilename(s: string | undefined | null): string {
 export function buildOfferFilename(
   projectName: string | undefined | null,
   estimateName: string | undefined | null,
-  variant?: 'sintetico' | 'completo',
+  variant?: 'sintetico' | 'completo' | 'ordine_fornitori',
 ): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
