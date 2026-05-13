@@ -115,12 +115,15 @@ const AddToEstimateDialogV2: React.FC<AddToEstimateDialogV2Props> = ({
   }, [estimateStratigraphies, estimateId, stratigraphyId]);
 
   // F7.7/F7.8: costo finitura del livello selezionato per il preview live
+  // F20.7: arrotonda unit_cost a 2 decimali PRIMA di calcolare il totale,
+  // identico al bulk update. Senza questo, preview e "Aggiorna prezzi"
+  // divergono per centesimi (arrotondamento full-precision vs 2 decimali).
   const selectedFinishLevel = finishLevels.find(l => l.code === finishLevel);
   const finishCost = selectedFinishLevel
     ? computeFinishLevelCost(selectedFinishLevel, hourlyRate).totalCost
     : 0;
-  const unitCostWithFinish = costPerSqm + finishCost;
-  const totalCost = unitCostWithFinish * area;
+  const unitCostWithFinish = Math.round((costPerSqm + finishCost) * 100) / 100;
+  const totalCost = Math.round(unitCostWithFinish * area * 100) / 100;
 
   const submit = () => {
     if (!stratigraphyId) {

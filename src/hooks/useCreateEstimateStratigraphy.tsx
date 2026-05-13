@@ -229,9 +229,12 @@ export const useCreateEstimateStratigraphy = () => {
 
       // Sommiamo il finish_cost al unit_cost: il preventivo è "tutto incluso"
       // (parete + finitura). L'utente vede un €/m² unico.
+      // F20.7: arrotonda unit_cost a 2 decimali PRIMA di calcolare il totale,
+      // identico al bulk update. Senza questo, "Aggiorna prezzi" produrrebbe
+      // un total_cost diverso (centesimi di delta su totali grandi).
       const finishCostPerSqm = finishSnapshot?.finishCostPerSqm ?? 0;
-      const finalUnitCost = Number(data.unitCost) + finishCostPerSqm;
-      const totalCost = data.area * (data.quantity || 1) * finalUnitCost;
+      const finalUnitCost = Math.round((Number(data.unitCost) + finishCostPerSqm) * 100) / 100;
+      const totalCost = Math.round(data.area * (data.quantity || 1) * finalUnitCost * 100) / 100;
 
       const { data: result, error } = await supabase
         .from('estimate_stratigraphies')
