@@ -146,11 +146,15 @@ export const useDashboardData = (period: DashboardPeriod = '6m') => {
       if (!user || projects.length === 0) return [];
       const projectIds = projects.map(p => p.id);
 
+      // PostgREST embed: usiamo il nome ESPLICITO della FK per evitare l'errore
+      // PGRST201 — il DB ha due constraint sulla stessa colonna (legacy
+      // `estimates_project_id_fkey` + `fk_estimates_project_id`) e l'embed
+      // ambiguo `projects ( ... )` non si risolve da solo.
       const { data, error } = await supabase
         .from('estimates')
         .select(`
           *,
-          projects ( id, name, customer_id ),
+          projects!estimates_project_id_fkey ( id, name, customer_id ),
           estimate_stratigraphies (
             *,
             stratigraphy_data
