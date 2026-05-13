@@ -213,6 +213,35 @@ export const useEstimates = (projectId?: string) => {
     },
   });
 
+  /**
+   * F30 bonus: aggiorna SOLO il `lost_reason` su un preventivo già in stato
+   * lost, SENZA toccare lost_at o gli altri timestamp. Serve a correggere
+   * il motivo registrato a posteriori (es. l'utente ha scoperto in seguito
+   * che il vero motivo era "Prezzo" e non "Altro").
+   */
+  const updateLostReasonMutation = useMutation({
+    mutationFn: async ({ estimateId, lostReason }: { estimateId: string; lostReason: LostReason | null }) => {
+      if (!user) throw new Error('User not authenticated');
+      const { data, error } = await supabase
+        .from('estimates')
+        .update({ lost_reason: lostReason, updated_at: new Date().toISOString() })
+        .eq('id', estimateId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['estimates'] });
+      queryClient.invalidateQueries({ queryKey: ['estimate', vars.estimateId] });
+      toast.success('Motivo perdita aggiornato');
+    },
+    onError: (error) => {
+      console.error('Error updating lost reason:', error);
+      toast.error("Errore nell'aggiornamento del motivo");
+    },
+  });
+
   // Hook per duplicazione (rende la fn disponibile)
   const { duplicateEstimate, isDuplicating } = useDuplicateEstimate();
 
@@ -229,9 +258,18 @@ export const useEstimates = (projectId?: string) => {
     ) => {
       updateEstimateStatusMutation.mutate({ estimateId, status, lostReason });
     },
+    /**
+     * F30 bonus: aggiorna solo il motivo perdita di un preventivo già in lost.
+     * Non altera timestamps. Per il flusso normale "transizione a lost" usa
+     * updateEstimateStatus(id, 'lost', motivo).
+     */
+    updateLostReason: (estimateId: string, lostReason: LostReason | null) => {
+      updateLostReasonMutation.mutate({ estimateId, lostReason });
+    },
     isCreating: createEstimateMutation.isPending,
     isDeleting: deleteEstimateMutation.isPending,
     isUpdatingStatus: updateEstimateStatusMutation.isPending,
+    isUpdatingLostReason: updateLostReasonMutation.isPending,
     duplicateEstimate,
     isDuplicating,
   };

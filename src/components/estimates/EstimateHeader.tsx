@@ -50,13 +50,18 @@ const LOST_REASON_OPTIONS: { value: LostReason; label: string; hint: string }[] 
 
 const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
   const navigate = useNavigate();
-  const { updateEstimateStatus, isUpdatingStatus } = useEstimates();
+  const { updateEstimateStatus, isUpdatingStatus, updateLostReason, isUpdatingLostReason } = useEstimates();
   const [isEditing, setIsEditing] = useState(false);
   const [tmpName, setTmpName] = useState(estimate.name);
   const [isSaving, setIsSaving] = useState(false);
   const [isExportingRDA, setIsExportingRDA] = useState(false);
   const [lostDialogOpen, setLostDialogOpen] = useState(false);
   const [lostReason, setLostReason] = useState<LostReason>('price');
+  /**
+   * F30 bonus: distingue "Segna come perso" (transizione → setta lost_at +
+   * lost_reason) da "Modifica motivo" (solo lost_reason, niente timestamp).
+   */
+  const [lostDialogMode, setLostDialogMode] = useState<'transition' | 'edit'>('transition');
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
   const { data: orgProfile } = useOrgProfile();
   const generateOfferNumber = useGenerateOfferNumber();
@@ -180,8 +185,26 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
   const goSent = () => updateEstimateStatus(estimate.id, 'sent');
   const goWon = () => updateEstimateStatus(estimate.id, 'won');
   const goLostConfirm = () => {
-    updateEstimateStatus(estimate.id, 'lost', lostReason);
+    if (lostDialogMode === 'edit') {
+      // F30 bonus: aggiorna solo lost_reason, niente nuovo lost_at.
+      updateLostReason(estimate.id, lostReason);
+    } else {
+      // Transizione vera in lost: setta lost_at + lost_reason in atomico.
+      updateEstimateStatus(estimate.id, 'lost', lostReason);
+    }
     setLostDialogOpen(false);
+  };
+  const openEditLostReason = () => {
+    // Precarica il motivo attuale (se presente) nel dialog.
+    const current = (estimate.lostReason as LostReason | null) ?? 'price';
+    setLostReason(current);
+    setLostDialogMode('edit');
+    setLostDialogOpen(true);
+  };
+  const openLostTransition = () => {
+    setLostReason('price');
+    setLostDialogMode('transition');
+    setLostDialogOpen(true);
   };
   const reopen = () => {
     updateEstimateStatus(estimate.id, 'draft');
@@ -301,13 +324,27 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
                   size="sm"
                   variant="outline"
                   className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
-                  onClick={() => { setLostReason('price'); setLostDialogOpen(true); }}
+                  onClick={openLostTransition}
                   disabled={isUpdatingStatus}
                 >
                   <XCircle className="h-4 w-4" />
                   Segna come perso
                 </Button>
               </>
+            )}
+            {/* F30 bonus: modifica solo il motivo di un preventivo già perso,
+                senza ricreare il timestamp lost_at. */}
+            {status === 'lost' && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
+                onClick={openEditLostReason}
+                disabled={isUpdatingStatus || isUpdatingLostReason}
+              >
+                <Pencil className="h-4 w-4" />
+                Modifica motivo
+              </Button>
             )}
             {locked && (
               <Button
@@ -374,18 +411,18 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
         </div>
       </div>
 
-      {/* Dialog: motivo perdita */}
+      {/* Dialog: motivo perdita (transition o edit) */}
       <Dialog open={lostDialogOpen} onOpenChange={setLostDialogOpen}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-red-600" />
-              Segna preventivo come perso
+              {lostDialogMode === 'edit' ? 'Modifica motivo perdita' : 'Segna preventivo come perso'}
             </DialogTitle>
             <DialogDescription>
-              Registra il motivo della perdita: ti aiuta a tracciare i pattern di
-              vendita nella dashboard e capire dove migliorare. Puoi sempre
-              riaprire il preventivo in seguito.
+              {lostDialogMode === 'edit'
+                ? 'Aggiorna il motivo registrato. La data di perdita resta invariata.'
+                : 'Registra il motivo della perdita: ti aiuta a tracciare i pattern di vendita nella dashboard e capire dove migliorare. Puoi sempre riaprire il preventivo in seguito.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -407,15 +444,19 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
             </Select>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setLostDialogOpen(false)} disabled={isUpdatingStatus}>
+            <Button
+              variant="outline"
+              onClick={() => setLostDialogOpen(false)}
+              disabled={isUpdatingStatus || isUpdatingLostReason}
+            >
               Annulla
             </Button>
             <Button
               variant="destructive"
               onClick={goLostConfirm}
-              disabled={isUpdatingStatus}
+              disabled={isUpdatingStatus || isUpdatingLostReason}
             >
-              Conferma perdita
+              {lostDialogMode === 'edit' ? 'Salva motivo' : 'Conferma perdita'}
             </Button>
           </DialogFooter>
         </DialogContent>

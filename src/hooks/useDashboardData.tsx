@@ -206,6 +206,34 @@ export const useDashboardData = (period: DashboardPeriod = '6m') => {
       return new Date(d) >= cutoff;
     };
 
+    // F16 diag: logga lo stato grezzo a console in dev per debug "dashboard vuota".
+    // Da rimuovere quando il problema è capito definitivamente.
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.log('[Dashboard.diag]', {
+        period,
+        cutoffIso: cutoff?.toISOString() ?? 'all',
+        projectsLen: projects.length,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        estimatesLen: (estimatesData as any[]).length,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        sampleEstimate: (estimatesData as any[])[0]
+          ? {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              id: (estimatesData as any[])[0].id,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              name: (estimatesData as any[])[0].name,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              status: (estimatesData as any[])[0].status,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              created_at: (estimatesData as any[])[0].created_at,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              total_amount: (estimatesData as any[])[0].total_amount,
+            }
+          : null,
+      });
+    }
+
     // ============== PROGETTI (stato corrente, non filtrato) ==============
     const activeProjects = projects.filter(p => p.status === 'active').length;
     const completedProjects = projects.filter(p => p.status === 'completed').length;
