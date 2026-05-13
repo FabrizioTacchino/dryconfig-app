@@ -6,3 +6,4 @@ export * from "./exportEstimateStratigraphiesExcel";
 export * from "./exportMaterialsSummaryExcel";
 export * from "./exportMaterialsSummaryPDF";
 export * from "./exportCompleteRDA";
+export * from "./exportSyntheticOffer";

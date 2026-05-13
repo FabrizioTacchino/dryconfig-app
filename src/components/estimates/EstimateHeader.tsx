@@ -3,7 +3,12 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Pencil, X, Check, FileStack } from 'lucide-react';
+import { ArrowLeft, Pencil, X, Check, FileText, FileStack, ChevronDown } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenuLabel, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { useGenerateOfferNumber } from "@/hooks/useOfferNumber";
 import { Estimate } from '@/types';
 import ExportDropdown from './ExportDropdown';
 import { EstimateStratigraphy } from '@/types/estimateStratigraphy';
@@ -28,6 +33,7 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
   const [isSaving, setIsSaving] = useState(false);
   const [isExportingRDA, setIsExportingRDA] = useState(false);
   const { data: orgProfile } = useOrgProfile();
+  const generateOfferNumber = useGenerateOfferNumber();
 
   const statusColors = {
     draft: 'bg-gray-100 text-gray-800 border-gray-200',
@@ -71,22 +77,49 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
   const { saveNotes, isSaving: isSavingNotes } = useEstimateNotes(estimate.id);
 
   // Funzione per export RDA Completa
-  const handleExportCompleteRDA = async () => {
+  /**
+   * Genera (o legge) il numero offerta e poi esegue l'export.
+   * Variant: 'sintetico' = preventivo cliente, 'completo' = preventivo cantiere/tecnico.
+   */
+  const handleExportOffer = async (variant: 'sintetico' | 'completo') => {
     if (isExportingRDA) return;
-
     setIsExportingRDA(true);
     try {
-      const { exportCompleteRDA } = await import('@/utils/export');
-      await exportCompleteRDA(estimate, stratigraphies, orgProfile ?? null);
+      // 1. Genera il numero offerta (idempotente: se già esiste lo ritorna)
+      let offerNumber = estimate.offerNumber as string | null | undefined;
+      let issuedAt = estimate.offerIssuedAt as Date | null | undefined;
+      if (!offerNumber) {
+        const info = await generateOfferNumber.mutateAsync(estimate.id);
+        offerNumber = info.offer_number;
+        issuedAt = new Date();
+      }
+      const enrichedEstimate = {
+        ...estimate,
+        offerNumber: offerNumber ?? null,
+        offerIssuedAt: issuedAt ?? new Date(),
+      };
+
+      // 2. Carica il modulo dinamicamente (code splitting)
+      const exp = await import('@/utils/export');
+      if (variant === 'sintetico') {
+        await exp.exportSyntheticOffer({
+          estimate: enrichedEstimate,
+          stratigraphies,
+          org: orgProfile ?? null,
+        });
+      } else {
+        await exp.exportCompleteRDA(enrichedEstimate, stratigraphies, orgProfile ?? null);
+      }
       toast({
-        title: 'RDA Completa generata con successo!',
-        description: 'Il documento completo con tutte le stratigrafie è stato scaricato.',
+        title: `Preventivo ${variant === 'sintetico' ? 'Sintetico' : 'Completo'} generato`,
+        description: offerNumber
+          ? `Numero offerta: ${offerNumber}`
+          : 'Documento scaricato',
       });
     } catch (error) {
-      console.error('Errore export RDA Completa:', error);
-      // Manda in Sentry con contesto utile per il debug
+      console.error('Errore export preventivo:', error);
       Sentry.captureException(error, {
-        tags: { feature: 'export-rda' },
+        tags: { feature: 'export-offer', variant },
         extra: {
           estimateId: estimate?.id,
           stratigraphyCount: stratigraphies?.length,
@@ -94,7 +127,7 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
       });
       const errMsg = error instanceof Error ? error.message : String(error);
       toast({
-        title: 'Errore generazione RDA',
+        title: 'Errore generazione preventivo',
         description: errMsg.slice(0, 200),
         variant: 'destructive',
       });
@@ -187,15 +220,41 @@ const EstimateHeader = ({ estimate, stratigraphies }: EstimateHeaderProps) => {
           <Badge className={statusColors[estimate.status]}>
             {statusLabels[estimate.status]}
           </Badge>
-          <Button 
-            variant="default" 
-            className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-            onClick={handleExportCompleteRDA}
-            disabled={isExportingRDA}
-          >
-            <FileStack className="h-4 w-4" />
-            {isExportingRDA ? 'Generando...' : 'Stampa RDA Completa'}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="default"
+                className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+                disabled={isExportingRDA}
+              >
+                <FileStack className="h-4 w-4" />
+                {isExportingRDA ? 'Generando...' : 'Genera preventivo'}
+                <ChevronDown className="h-4 w-4 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72">
+              <DropdownMenuLabel>Scegli il formato del preventivo</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleExportOffer('sintetico')}>
+                <FileText className="h-4 w-4 mr-2 text-primary" />
+                <div className="flex flex-col">
+                  <span className="font-medium">Preventivo Sintetico</span>
+                  <span className="text-xs text-muted-foreground">
+                    Per il cliente · 2-3 pagine · prezzi finali + IVA
+                  </span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExportOffer('completo')}>
+                <FileStack className="h-4 w-4 mr-2 text-primary" />
+                <div className="flex flex-col">
+                  <span className="font-medium">Preventivo Completo</span>
+                  <span className="text-xs text-muted-foreground">
+                    Per il cantiere · composizione + acquisti + tutto
+                  </span>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <ExportDropdown estimate={estimate} stratigraphies={stratigraphies} />
         </div>
       </div>
