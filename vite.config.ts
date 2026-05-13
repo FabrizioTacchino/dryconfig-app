@@ -8,11 +8,14 @@ import { sentryVitePlugin } from "@sentry/vite-plugin";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
-    port: 8080,
-    // strictPort: se 8080 e` occupata, Vite si rifiuta di partire invece di
-    // fallback-are su 8081/8082/... Quelle porte non sono in CORS allowed
-    // origins di Supabase → tutte le query DB fallirebbero silenziosamente
-    // (dashboard piatta, ecc.). Meglio errore chiaro all'avvio.
+    // Il progetto Supabase prod (aifeyamngllcezkoxzxu) ha 'http://localhost:8085'
+    // hardcoded come Access-Control-Allow-Origin. Cambiare lato Supabase
+    // richiede accesso al pannello "API Settings" — finche` non lo si
+    // aggiorna, il dev DEVE girare su 8085 altrimenti CORS blocca tutte le
+    // query (sintomo: dashboard piatta, useProjects ritorna []).
+    port: 8085,
+    // strictPort: se 8085 e` occupata, Vite si rifiuta di partire invece di
+    // fallback-are silenziosamente su un'altra porta non in whitelist CORS.
     strictPort: true,
   },
   plugins: [
